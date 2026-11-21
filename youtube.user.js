@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube Tweaks (Podcasts page, player, compact Home)
 // @description  Separate "Podcasts" page in the sidebar; trimmed player (no subtitles/AirPlay, highest quality, minimal settings menu, Picture-in-Picture button); compact Home grid.
-// @version      1.8.0
+// @version      1.8.1
 // @updateURL    https://raw.githubusercontent.com/thombuilds/Userscripts/main/youtube.user.js
 // @downloadURL  https://raw.githubusercontent.com/thombuilds/Userscripts/main/youtube.user.js
 // @match        https://www.youtube.com/*
@@ -133,7 +133,7 @@
     debug: false,
   };
 
-  const VERSION = "1.8.0"; // keep in sync with @version; shown on the Podcasts page and in the console
+  const VERSION = "1.8.1"; // keep in sync with @version; shown on the Podcasts page and in the console
   const HASH = "#" + CONFIG.hash;
   const log = (...a) => CONFIG.debug && console.log("[YT Podcasts]", ...a);
 
@@ -1613,12 +1613,22 @@
   function ensurePipButtons() {
     if (!CONFIG.pipButton) return;
     for (const player of document.querySelectorAll(".html5-video-player")) {
-      const video = player.querySelector("video");
-      const controls = player.querySelector(".ytp-right-controls");
-      if (!video || !controls || !pipSupported(video)) continue;
-      if (controls.querySelector(".ytpod-pip-button")) continue;
-      const fullscreen = controls.querySelector(".ytp-fullscreen-button");
-      controls.insertBefore(pipButtonFor(player), fullscreen || null);
+      try {
+        const video = player.querySelector("video");
+        if (!video || !pipSupported(video)) continue;
+        if (player.querySelector(".ytpod-pip-button")) continue;
+        // The newer player (rounded control pill) nests the buttons a level
+        // deeper, so insert next to the fullscreen button in *its* parent.
+        const fullscreen = player.querySelector(".ytp-fullscreen-button");
+        if (fullscreen && fullscreen.parentNode) {
+          fullscreen.parentNode.insertBefore(pipButtonFor(player), fullscreen);
+          continue;
+        }
+        const controls = player.querySelector(".ytp-right-controls");
+        if (controls) controls.append(pipButtonFor(player));
+      } catch (err) {
+        if (CONFIG.debug) console.warn("[YT Tweaks] PiP button:", err);
+      }
     }
   }
 

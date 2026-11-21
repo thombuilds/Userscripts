@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube Tweaks (Podcasts page, player, compact Home)
 // @description  Separate "Podcasts" page in the sidebar; trimmed player (no subtitles/AirPlay, highest quality, minimal settings menu, Picture-in-Picture button); compact Home grid.
-// @version      1.8.1
+// @version      1.8.2
 // @updateURL    https://raw.githubusercontent.com/thombuilds/Userscripts/main/youtube.user.js
 // @downloadURL  https://raw.githubusercontent.com/thombuilds/Userscripts/main/youtube.user.js
 // @match        https://www.youtube.com/*
@@ -133,7 +133,7 @@
     debug: false,
   };
 
-  const VERSION = "1.8.1"; // keep in sync with @version; shown on the Podcasts page and in the console
+  const VERSION = "1.8.2"; // keep in sync with @version; shown on the Podcasts page and in the console
   const HASH = "#" + CONFIG.hash;
   const log = (...a) => CONFIG.debug && console.log("[YT Podcasts]", ...a);
 
@@ -1328,6 +1328,12 @@
     let css = `
       /* Settings menu items we filtered out (see filterSettingsMenus). */
       .ytpod-hide { display: none !important; }
+      /* Our Picture-in-Picture button (see ensurePipButtons). */
+      .ytpod-pip-button {
+        display: inline-flex !important; align-items: center; justify-content: center;
+        vertical-align: top; padding: 0 !important;
+      }
+      .ytpod-pip-button svg { width: 24px; height: 24px; flex: none; }
     `;
     if (CONFIG.hideSubtitles)
       css += `
@@ -1562,7 +1568,7 @@
    * requestPictureInPicture(), falling back to Safari's webkitSetPresentationMode.
    */
   const PIP_ICON_PATH =
-    "M25 17H17v6h8v-6zm4 8V11c0-1.1-.9-2-2-2H9c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h18c1.1 0 2-.9 2-2zm-2 .02H9V10.98h18v14.04z";
+    "M19 11h-8v6h8v-6zm4 8V4.98C23 3.88 22.1 3 21 3H3c-1.1 0-2 .88-2 1.98V19c0 1.1.9 2 2 2h18c1.1 0 2-.9 2-2zm-2 .02H3V4.97h18v14.05z";
 
   function pipSupported(video) {
     return (document.pictureInPictureEnabled && typeof video.requestPictureInPicture === "function") ||
@@ -1589,17 +1595,17 @@
     }
   }
 
-  function pipButtonFor(player) {
+  // Sized to match the fullscreen button (the newer player's buttons are a
+  // different size from the old 36x36 ones), centred with flexbox.
+  function pipButtonFor(player, fullscreen) {
     const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-    svg.setAttribute("viewBox", "0 0 36 36");
-    svg.setAttribute("width", "100%");
-    svg.setAttribute("height", "100%");
+    svg.setAttribute("viewBox", "0 0 24 24");
     const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
     path.setAttribute("d", PIP_ICON_PATH);
     path.setAttribute("fill", "#fff");
     svg.append(path);
     const label = `Picture-in-picture (${CONFIG.pipKey})`;
-    return h("button", {
+    const button = h("button", {
       class: "ytp-button ytpod-pip-button",
       title: label,
       "aria-label": label,
@@ -1608,6 +1614,20 @@
         togglePip(player.querySelector("video"));
       },
     }, svg);
+    if (fullscreen) {
+      const cs = getComputedStyle(fullscreen);
+      if (parseFloat(cs.width) > 0) button.style.width = cs.width;
+      if (parseFloat(cs.height) > 0) button.style.height = cs.height;
+      button.style.margin = cs.margin;
+      const icon = fullscreen.querySelector("svg");
+      const r = icon && icon.getBoundingClientRect();
+      // Draw our icon at the same rendered size as the fullscreen icon.
+      if (r && r.width > 0) {
+        svg.style.width = r.width + "px";
+        svg.style.height = r.height + "px";
+      }
+    }
+    return button;
   }
 
   function ensurePipButtons() {
@@ -1621,7 +1641,7 @@
         // deeper, so insert next to the fullscreen button in *its* parent.
         const fullscreen = player.querySelector(".ytp-fullscreen-button");
         if (fullscreen && fullscreen.parentNode) {
-          fullscreen.parentNode.insertBefore(pipButtonFor(player), fullscreen);
+          fullscreen.parentNode.insertBefore(pipButtonFor(player, fullscreen), fullscreen);
           continue;
         }
         const controls = player.querySelector(".ytp-right-controls");

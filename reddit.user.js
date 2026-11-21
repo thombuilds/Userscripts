@@ -1,9 +1,7 @@
 // ==UserScript==
 // @name         Reddit Tweaks (Narwhal-style old.reddit)
 // @description  Restyles old.reddit.com into a clean, minimal, app-like layout.
-// @version      1.1.1
-// @updateURL    https://raw.githubusercontent.com/thombuilds/Userscripts/main/reddit.user.js
-// @downloadURL  https://raw.githubusercontent.com/thombuilds/Userscripts/main/reddit.user.js
+// @version      1.1.0
 // @match        https://old.reddit.com/*
 // @match        https://www.reddit.com/*
 // @match        https://reddit.com/*

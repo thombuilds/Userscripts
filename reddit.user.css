@@ -1,0 +1,48 @@
+/* ==UserStyle==
+@name         Reddit Tweaks – anti-flash
+@description  Companion to reddit.user.js: paints the background instantly and hides the page until the script's styles are in, so there's no flash of Reddit's own design.
+@version      1.1.0
+@match        https://old.reddit.com/*
+@match        https://www.reddit.com/*
+@match        https://reddit.com/*
+==/UserStyle== */
+
+/*
+ * HOW TO USE (recommended): as Safari's own style sheet
+ *   Safari → Settings → Advanced → Style sheet → Other… → pick this file.
+ *   Safari applies it from the very first frame, unlike the Userscripts app,
+ *   which starts reddit.user.js a moment after the page is already drawn.
+ *
+ * Safari applies this file to EVERY website, so every rule below only
+ * matches old Reddit:
+ *   - the page loads Reddit's CSS from redditstatic.com, and
+ *   - it has no <shreddit-app> element (that would be the new design).
+ * On any other site, nothing here matches, so nothing changes.
+ *
+ * What it does on old Reddit:
+ *   1. paints our background color right away
+ *   2. hides the page content until reddit.user.js has applied its styles
+ *      (the script adds the class "nw-styled" to <html>)
+ *   3. safety net: if the script doesn't run, the page appears after 1.5s
+ *
+ * Keep the two colors in sync with --nw-bg in reddit.user.js.
+ */
+
+/* 1. Background color immediately */
+:root:has(link[href*="redditstatic.com"]):not(:has(shreddit-app)) {
+  background: #e9ecf1 !important;          /* light --nw-bg */
+}
+@media (prefers-color-scheme: dark) {
+  :root:has(link[href*="redditstatic.com"]):not(:has(shreddit-app)) {
+    background: #12141a !important;        /* dark --nw-bg */
+  }
+}
+
+/* 2 + 3. Hide content until the script's styles are in (max 1.5s) */
+:root:has(link[href*="redditstatic.com"]):not(:has(shreddit-app)):not(.nw-styled) body {
+  opacity: 0;
+  animation: nw-reveal 0s linear 1.5s forwards;
+}
+@keyframes nw-reveal {
+  to { opacity: 1; }
+}

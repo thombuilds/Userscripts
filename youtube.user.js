@@ -1,7 +1,9 @@
 // ==UserScript==
 // @name         YouTube Tweaks (Podcasts page, player, compact Home)
 // @description  Separate "Podcasts" page in the sidebar; trimmed player (no subtitles/AirPlay, highest quality, minimal settings menu); compact Home grid.
-// @version      1.7.0
+// @version      1.7.1
+// @updateURL    https://raw.githubusercontent.com/thombuilds/Userscripts/main/youtube.user.js
+// @downloadURL  https://raw.githubusercontent.com/thombuilds/Userscripts/main/youtube.user.js
 // @match        https://www.youtube.com/*
 // @run-at       document-start
 // @inject-into  auto

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube Tweaks (Podcasts page, player, compact Home)
-// @description  Separate "Podcasts" page in the sidebar; trimmed player (no subtitles/AirPlay, highest quality, minimal settings menu); compact Home grid.
-// @version      1.7.1
+// @description  Separate "Podcasts" page in the sidebar; trimmed player (no subtitles/AirPlay, highest quality, minimal settings menu, Picture-in-Picture button); compact Home grid.
+// @version      1.8.0
 // @updateURL    https://raw.githubusercontent.com/thombuilds/Userscripts/main/youtube.user.js
 // @downloadURL  https://raw.githubusercontent.com/thombuilds/Userscripts/main/youtube.user.js
 // @match        https://www.youtube.com/*
@@ -24,7 +24,7 @@
  *   9. SIDEBAR ENTRY       – "Podcasts" in the left guide + the collapsed mini-guide
  *  10. PODCASTS PAGE       – the overlay page, sections, tiles, buttons, toast
  *  11. NAVIGATION          – #podcasts hash, back/forward, YouTube SPA events
- *  12. PLAYER              – hide subtitles/AirPlay, force highest quality, trim the settings menu
+ *  12. PLAYER              – hide subtitles/AirPlay, force highest quality, trim the settings menu, PiP button
  *  13. SHORTS              – hide Shorts everywhere, open /shorts/ links in the normal player
  *  14. GRID LAYOUT         – 5 tiles per row on every YouTube video grid, same as the Podcasts page
  *  15. BOOT                – start-up + one throttled MutationObserver
@@ -109,6 +109,10 @@
     // Settings (gear) menu: only items whose label starts with one of these stay.
     // Labels are as shown in YouTube's UI language (English here).
     playerSettingsKeep: ["Quality", "Sleep timer"],
+    // Picture-in-Picture button in the player controls (next to fullscreen),
+    // plus the "p" key as a shortcut (ignored while typing in a text field).
+    pipButton: true,
+    pipKey: "p",
 
     // ---- Shorts ----
     // Hide Shorts everywhere (sidebar, shelves, tiles, tabs, chips) and turn
@@ -129,7 +133,7 @@
     debug: false,
   };
 
-  const VERSION = "1.7.0"; // keep in sync with @version; shown on the Podcasts page and in the console
+  const VERSION = "1.8.0"; // keep in sync with @version; shown on the Podcasts page and in the console
   const HASH = "#" + CONFIG.hash;
   const log = (...a) => CONFIG.debug && console.log("[YT Podcasts]", ...a);
 
@@ -1552,6 +1556,84 @@
     }
   }
 
+  /*
+   * Picture-in-Picture.
+   * A button in .ytp-right-controls, before fullscreen. Uses the standard
+   * requestPictureInPicture(), falling back to Safari's webkitSetPresentationMode.
+   */
+  const PIP_ICON_PATH =
+    "M25 17H17v6h8v-6zm4 8V11c0-1.1-.9-2-2-2H9c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h18c1.1 0 2-.9 2-2zm-2 .02H9V10.98h18v14.04z";
+
+  function pipSupported(video) {
+    return (document.pictureInPictureEnabled && typeof video.requestPictureInPicture === "function") ||
+      typeof video.webkitSetPresentationMode === "function";
+  }
+
+  function inPip(video) {
+    return document.pictureInPictureElement === video || video.webkitPresentationMode === "picture-in-picture";
+  }
+
+  async function togglePip(video) {
+    if (!video) return;
+    video.removeAttribute("disablepictureinpicture");
+    video.disablePictureInPicture = false;
+    try {
+      if (typeof video.requestPictureInPicture === "function" && document.pictureInPictureEnabled) {
+        if (document.pictureInPictureElement) await document.exitPictureInPicture();
+        else await video.requestPictureInPicture();
+      } else if (typeof video.webkitSetPresentationMode === "function") {
+        video.webkitSetPresentationMode(inPip(video) ? "inline" : "picture-in-picture");
+      }
+    } catch (err) {
+      console.warn("[YT Tweaks] Picture-in-Picture failed:", err);
+    }
+  }
+
+  function pipButtonFor(player) {
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("viewBox", "0 0 36 36");
+    svg.setAttribute("width", "100%");
+    svg.setAttribute("height", "100%");
+    const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    path.setAttribute("d", PIP_ICON_PATH);
+    path.setAttribute("fill", "#fff");
+    svg.append(path);
+    const label = `Picture-in-picture (${CONFIG.pipKey})`;
+    return h("button", {
+      class: "ytp-button ytpod-pip-button",
+      title: label,
+      "aria-label": label,
+      onclick: (e) => {
+        e.stopPropagation();
+        togglePip(player.querySelector("video"));
+      },
+    }, svg);
+  }
+
+  function ensurePipButtons() {
+    if (!CONFIG.pipButton) return;
+    for (const player of document.querySelectorAll(".html5-video-player")) {
+      const video = player.querySelector("video");
+      const controls = player.querySelector(".ytp-right-controls");
+      if (!video || !controls || !pipSupported(video)) continue;
+      if (controls.querySelector(".ytpod-pip-button")) continue;
+      const fullscreen = controls.querySelector(".ytp-fullscreen-button");
+      controls.insertBefore(pipButtonFor(player), fullscreen || null);
+    }
+  }
+
+  document.addEventListener("keydown", (e) => {
+    if (!CONFIG.pipButton || !CONFIG.pipKey) return;
+    if (e.key.toLowerCase() !== CONFIG.pipKey.toLowerCase() || e.metaKey || e.ctrlKey || e.altKey) return;
+    const t = e.target;
+    if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
+    const video = document.querySelector("#movie_player video") || document.querySelector(".html5-video-player video");
+    if (!video || !pipSupported(video)) return;
+    e.preventDefault();
+    e.stopPropagation();
+    togglePip(video);
+  }, true);
+
   /* ======================================================================
    * 13. SHORTS
    *    CSS hides anything that is or links to a Short (needs :has, Safari 15.4+).
@@ -1715,6 +1797,7 @@
       tickTimer = 0;
       ensureGuideEntries();
       watchPlayers();
+      ensurePipButtons();
       filterSettingsMenus();
       watchGrids();
       hideShortsByText();

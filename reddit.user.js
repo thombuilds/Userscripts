@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Reddit Tweaks (Narwhal-style old.reddit)
 // @description  Restyles old.reddit.com into a clean, minimal, app-like layout.
-// @version      1.1.1
+// @version      1.1.2
 // @updateURL    https://raw.githubusercontent.com/thombuilds/Userscripts/main/reddit.user.js
 // @downloadURL  https://raw.githubusercontent.com/thombuilds/Userscripts/main/reddit.user.js
 // @match        https://old.reddit.com/*
@@ -94,6 +94,26 @@
   // True when this page is running inside the split view's right pane.
   const IN_PANE = window.top !== window.self;
   if (IN_PANE) document.documentElement.classList.add("nw-in-pane");
+
+  // Old Reddit refuses to send any request (comment save, votes, save…)
+  // from inside an iframe, as anti-clickjacking protection: its $.request
+  // silently returns unless `reddit.external_frame` is set. Our pane is an
+  // iframe on the same site, so set that flag in the page's own JS (the
+  // userscript's `window` may be a separate sandbox, hence the <script>).
+  if (IN_PANE) {
+    const allowFrame = document.createElement("script");
+    allowFrame.textContent = `(() => {
+      const set = () => {
+        if (window.r && r.config) r.config.external_frame = true;
+        if (window.reddit) window.reddit.external_frame = true;
+      };
+      set();
+      document.addEventListener("DOMContentLoaded", set);
+      window.addEventListener("load", set);
+    })();`;
+    (document.head || document.documentElement).appendChild(allowFrame);
+    allowFrame.remove();
+  }
 
   // Guess the layout right away (from the URL and window width), so the page
   // doesn't render centered first and then jump left. Section 3e/3g correct

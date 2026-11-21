@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube Tweaks (Podcasts page, player, compact Home)
 // @description  Separate "Podcasts" page in the sidebar; trimmed player (no subtitles/AirPlay, highest quality, minimal settings menu, Picture-in-Picture button); compact Home grid.
-// @version      1.8.2
+// @version      1.8.3
 // @updateURL    https://raw.githubusercontent.com/thombuilds/Userscripts/main/youtube.user.js
 // @downloadURL  https://raw.githubusercontent.com/thombuilds/Userscripts/main/youtube.user.js
 // @match        https://www.youtube.com/*
@@ -133,7 +133,7 @@
     debug: false,
   };
 
-  const VERSION = "1.8.2"; // keep in sync with @version; shown on the Podcasts page and in the console
+  const VERSION = "1.8.3"; // keep in sync with @version; shown on the Podcasts page and in the console
   const HASH = "#" + CONFIG.hash;
   const log = (...a) => CONFIG.debug && console.log("[YT Podcasts]", ...a);
 
@@ -1619,13 +1619,6 @@
       if (parseFloat(cs.width) > 0) button.style.width = cs.width;
       if (parseFloat(cs.height) > 0) button.style.height = cs.height;
       button.style.margin = cs.margin;
-      const icon = fullscreen.querySelector("svg");
-      const r = icon && icon.getBoundingClientRect();
-      // Draw our icon at the same rendered size as the fullscreen icon.
-      if (r && r.width > 0) {
-        svg.style.width = r.width + "px";
-        svg.style.height = r.height + "px";
-      }
     }
     return button;
   }

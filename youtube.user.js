@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube Tweaks (Podcasts page, player, compact Home)
 // @description  Separate "Podcasts" page in the sidebar; trimmed player (no subtitles/AirPlay, highest quality, minimal settings menu, Picture-in-Picture button); compact Home grid.
-// @version      1.8.3
+// @version      1.8.4
 // @updateURL    https://raw.githubusercontent.com/thombuilds/Userscripts/main/youtube.user.js
 // @downloadURL  https://raw.githubusercontent.com/thombuilds/Userscripts/main/youtube.user.js
 // @match        https://www.youtube.com/*
@@ -119,6 +119,9 @@
     // /shorts/ links and pages into the normal player.
     hideShorts: true,
     shortsLabel: "Shorts", // as written in YouTube's UI language
+    // Shelves (sections with a heading, e.g. "Most relevant" on Subscriptions)
+    // to hide, by their title as written in YouTube's UI language.
+    hideShelves: ["Most relevant"],
 
     // ---- Grids (Home, Subscriptions, channel pages, and our Podcasts page) ----
     // Every video grid shows tilesPerRow tiles per row. In a narrow window it
@@ -133,7 +136,7 @@
     debug: false,
   };
 
-  const VERSION = "1.8.3"; // keep in sync with @version; shown on the Podcasts page and in the console
+  const VERSION = "1.8.4"; // keep in sync with @version; shown on the Podcasts page and in the console
   const HASH = "#" + CONFIG.hash;
   const log = (...a) => CONFIG.debug && console.log("[YT Podcasts]", ...a);
 
@@ -1704,6 +1707,18 @@
     }
   }
 
+  /** Shelves listed in CONFIG.hideShelves, matched by their heading text. */
+  function hideShelvesByTitle() {
+    if (!CONFIG.hideShelves.length) return;
+    const titles = CONFIG.hideShelves.map((t) => t.toLowerCase());
+    for (const sec of document.querySelectorAll("ytd-rich-section-renderer, ytd-shelf-renderer")) {
+      if (sec.classList.contains("ytpod-hide")) continue;
+      const h = sec.querySelector("#title, h2, [role='heading']");
+      const text = h && (h.textContent || "").replace(/\s+/g, " ").trim().toLowerCase();
+      if (text && titles.includes(text)) sec.classList.add("ytpod-hide");
+    }
+  }
+
   const shortsId = (path) => (/^\/shorts\/([\w-]{6,})/.exec(path) || [])[1];
 
   /** On a /shorts/ page → the same video in the normal player. */
@@ -1824,6 +1839,7 @@
       filterSettingsMenus();
       watchGrids();
       hideShortsByText();
+      hideShelvesByTitle();
       if (state.open) mountPage(); // in case YouTube rebuilt #page-manager
     }, 500);
   }

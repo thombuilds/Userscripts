@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Reddit Tweaks (Narwhal-style old.reddit)
 // @description  Restyles old.reddit.com into a clean, minimal, app-like layout.
-// @version      1.1.2
+// @version      1.2.0
 // @updateURL    https://raw.githubusercontent.com/thombuilds/Userscripts/main/reddit.user.js
 // @downloadURL  https://raw.githubusercontent.com/thombuilds/Userscripts/main/reddit.user.js
 // @match        https://old.reddit.com/*
@@ -27,6 +27,7 @@
  *        3i. infinite scroll (loads the next page near the bottom)
  *        3j. modern touches: short times/counts, icon buttons, comment dots
  *        3k. watching for new content (new posts, "load more comments")
+ *        3l. read posts (dimmed in listings, optional "Hide read")
  *
  * Every class name prefixed with "nw-" is ours (nw = Narwhal-ish), so it never
  * clashes with Reddit's own classes.
@@ -73,9 +74,15 @@
     // Below this window width, split view turns off and posts open normally.
     splitMinWidth: 1000,
 
-    // Starting list for the favorites sidebar. Once you add, remove or drag
-    // subreddits in the sidebar, your edited list is saved in the browser and
-    // used instead (editing this list then has no effect).
+    // Your favorite subreddits (the sidebar on the right). This list is the
+    // master copy, so it syncs to every browser through GitHub:
+    //   - Editing in the sidebar (☆ add, × remove, drag to reorder) works as
+    //     usual and is saved in this browser right away.
+    //   - To keep those edits everywhere, click "Copy list" in the sidebar,
+    //     paste the copied line over this list, bump @version and push.
+    //   - Whenever this list changes (e.g. the script updates from GitHub),
+    //     each browser replaces its saved list with it on the next page load.
+    //     Sidebar edits you didn't copy in here are dropped at that point.
     favorites: [
       "apple", "AppleWatch", "AskReddit", "Boxing", "formula1", "ios",
       "ipad", "iphone", "LivestreamFail", "malelivingspace", "playstation",
@@ -89,7 +96,16 @@
     // Load the next page automatically when you scroll near the bottom
     // (instead of clicking "next ›").
     infiniteScroll: true,
+
+    // Remember which posts you've opened and dim them in listings. The
+    // "Hide read" pill in the favorites sidebar hides them completely.
+    markRead: true,
   };
+
+  // Read posts (3l): fullname → time opened, kept for 30 days.
+  const READ_KEY = "nw-read-v1";
+  const READ_DAYS = 30;
+  const HIDE_READ_KEY = "nw-hide-read-v1";
 
   // True when this page is running inside the split view's right pane.
   const IN_PANE = window.top !== window.self;
@@ -127,6 +143,12 @@
     if (wideFor(CONFIG.favoritesMinWidth)) {
       document.documentElement.classList.add("nw-favs-on");
     }
+    // "Hide read" on: set now, so read posts never flash in before hiding.
+    try {
+      if (CONFIG.markRead && localStorage.getItem(HIDE_READ_KEY) === "1") {
+        document.documentElement.classList.add("nw-hide-read");
+      }
+    } catch (err) { /* storage blocked: show everything */ }
   }
 
   // Arriving at a post from outside Reddit (Google, another app, a bookmark):
@@ -519,7 +541,7 @@
       padding: 12px 14px 10px !important;      /* a little tighter at the bottom */
       margin: 0 0 10px 0 !important;           /* gap between cards */
       position: relative;
-      transition: background 0.15s, box-shadow 0.15s, transform 0.15s;
+      transition: background 0.15s, box-shadow 0.15s, transform 0.15s, opacity 0.15s;
     }
     .thing.link:hover {
       background: var(--nw-card-hover) !important;
@@ -1207,6 +1229,36 @@
     }
     .nw-fav-toggle:hover { color: var(--nw-text) !important; }
     .nw-fav-toggle.nw-on { color: var(--nw-accent) !important; }
+
+    /* Small pills under the search box: "Hide read", "Copy list" */
+    .nw-favs-tools {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin: 8px 0 0;
+    }
+    .nw-favs-pill {
+      appearance: none;
+      padding: 3px 10px !important;
+      border: none !important;
+      border-radius: 999px !important;
+      background: var(--nw-fill) !important;
+      color: var(--nw-text-muted) !important;
+      font: 600 12px/16px var(--nw-font) !important;
+      cursor: pointer;
+    }
+    .nw-favs-pill:hover { color: var(--nw-text) !important; }
+    .nw-favs-pill[aria-pressed="true"] {
+      background: color-mix(in srgb, var(--nw-accent) 14%, transparent) !important;
+      color: var(--nw-accent) !important;
+    }
+
+    /* ---------- 2.15 Read posts (JS 3l) ----------------------------- */
+    /* The post open in the pane (.nw-selected) is never dimmed or hidden. */
+    .thing.link.nw-read:not(.nw-selected) { opacity: 0.6; }
+    .thing.link.nw-read:not(.nw-selected):hover { opacity: 1; }
+    .thing.link.nw-read:not(.nw-selected) a.title { color: var(--nw-visited) !important; }
+    html.nw-hide-read .thing.link.nw-read:not(.nw-selected) { display: none !important; }
   `;
 
   // Inject immediately. At document-start <head> may not exist yet,
@@ -1561,7 +1613,10 @@
   function openInPane(url, post) {
     if (selectedPost) selectedPost.classList.remove("nw-selected");
     selectedPost = post;
-    if (post) post.classList.add("nw-selected");
+    if (post) {
+      post.classList.add("nw-selected");
+      markRead(post.dataset.fullname);
+    }
 
     const title = post && post.querySelector("a.title");
     pane.querySelector(".nw-pane-title").textContent = title ? title.textContent : "";
@@ -1721,15 +1776,49 @@
     return `hsl(${hash} 55% 50%)`;
   }
 
-  // Your favorites list, saved in this browser. Falls back to CONFIG.favorites
-  // until you change something.
+  // Your favorites list, saved in this browser. CONFIG.favorites is the
+  // master: we keep a fingerprint of it next to the saved list, and when
+  // CONFIG.favorites changes (new version from GitHub) it replaces the
+  // saved list. Otherwise the saved list (with your sidebar edits) is used.
   const FAV_KEY = "nw-favorites-v1";
+  const FAV_FP_KEY = "nw-favorites-fp-v1";
+  const FAV_FP = JSON.stringify(CONFIG.favorites);
   function loadFavorites() {
     try {
       const saved = JSON.parse(localStorage.getItem(FAV_KEY));
-      if (Array.isArray(saved)) return saved.filter((n) => typeof n === "string" && n);
+      const fp = localStorage.getItem(FAV_FP_KEY);
+      const savedOk = Array.isArray(saved);
+      if (fp !== FAV_FP) {
+        localStorage.setItem(FAV_FP_KEY, FAV_FP);
+        // No fingerprint yet but a saved list (first run of this version):
+        // keep your current edits instead of wiping them.
+        if (!(fp === null && savedOk)) {
+          localStorage.setItem(FAV_KEY, FAV_FP);
+          return CONFIG.favorites.slice();
+        }
+      }
+      if (savedOk) return saved.filter((n) => typeof n === "string" && n);
     } catch (err) { /* storage blocked or bad data: use the default */ }
     return CONFIG.favorites.slice();
+  }
+
+  // Copy text to the clipboard; true if it worked.
+  async function copyText(text) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch (err) {
+      // Older API as a fallback (e.g. clipboard permission denied).
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      ta.style.cssText = "position:fixed;top:0;left:0;opacity:0;";
+      document.body.appendChild(ta);
+      ta.select();
+      let ok = false;
+      try { ok = document.execCommand("copy"); } catch (e) { /* no luck */ }
+      ta.remove();
+      return ok;
+    }
   }
   function saveFavorites(list) {
     try { localStorage.setItem(FAV_KEY, JSON.stringify(list)); }
@@ -1763,11 +1852,41 @@
       <div class="nw-favs-head">
         <div class="nw-favs-label">Favorites</div>
         <input class="nw-favs-search" type="search" placeholder="Search" autocomplete="off">
+        <div class="nw-favs-tools">
+          <button class="nw-favs-pill nw-favs-hide-read" type="button" aria-pressed="false"
+            title="Hide posts you've already opened">Hide read</button>
+          <button class="nw-favs-pill nw-favs-copy" type="button"
+            title="Copy this list as a line to paste into CONFIG.favorites">Copy list</button>
+        </div>
       </div>
       <ul class="nw-favs-list"></ul>
     `;
     const list = box.querySelector(".nw-favs-list");
     const search = box.querySelector(".nw-favs-search");
+
+    // "Hide read" pill (3l).
+    const hideReadBtn = box.querySelector(".nw-favs-hide-read");
+    const syncHideRead = () => hideReadBtn.setAttribute("aria-pressed",
+      String(document.documentElement.classList.contains("nw-hide-read")));
+    if (CONFIG.markRead) {
+      hideReadBtn.addEventListener("click", () => {
+        setHideRead(!document.documentElement.classList.contains("nw-hide-read"));
+        syncHideRead();
+      });
+      syncHideRead();
+    } else {
+      hideReadBtn.remove();
+    }
+
+    // "Copy list": the list as a line to paste into CONFIG.favorites.
+    const copyBtn = box.querySelector(".nw-favs-copy");
+    let copyTimer = null;
+    copyBtn.addEventListener("click", async () => {
+      const line = `favorites: [${favorites.map((n) => JSON.stringify(n)).join(", ")}],`;
+      copyBtn.textContent = (await copyText(line)) ? "Copied" : "Copy failed";
+      clearTimeout(copyTimer);
+      copyTimer = setTimeout(() => { copyBtn.textContent = "Copy list"; }, 1500);
+    });
 
     function makeItem({ name, href, isCurrent, icon }, avatars) {
       const li = document.createElement("li");
@@ -1907,6 +2026,10 @@
 
     // Changes made in another tab show up here too.
     window.addEventListener("storage", (e) => {
+      if (e.key === HIDE_READ_KEY && CONFIG.markRead) {
+        document.documentElement.classList.toggle("nw-hide-read", e.newValue === "1");
+        syncHideRead();
+      }
       if (e.key !== FAV_KEY) return;
       favorites = loadFavorites();
       render();
@@ -2139,8 +2262,82 @@
     author.before(dot);
   }
 
+  /* ---------- 3l. Read posts --------------------------------------- */
+  // Opening a post (pane, title/thumbnail/comments link, or its own page)
+  // remembers its fullname (t3_abc123) with the time. In listings those
+  // posts get .nw-read (CSS 2.15 dims them, or hides them with "Hide read").
+  let readPosts = {};
+
+  // Load from storage, dropping entries older than READ_DAYS.
+  function loadRead() {
+    let data = null;
+    try { data = JSON.parse(localStorage.getItem(READ_KEY)); } catch (err) { /* blocked / bad data */ }
+    if (!data || typeof data !== "object" || Array.isArray(data)) data = {};
+    const cutoff = Date.now() - READ_DAYS * 24 * 60 * 60 * 1000;
+    let pruned = false;
+    for (const [name, t] of Object.entries(data)) {
+      if (!(t > cutoff)) { delete data[name]; pruned = true; }
+    }
+    readPosts = data;
+    if (pruned) saveRead();
+  }
+  function saveRead() {
+    try { localStorage.setItem(READ_KEY, JSON.stringify(readPosts)); }
+    catch (err) { /* storage blocked: just not remembered */ }
+  }
+
+  function markRead(fullname) {
+    if (!CONFIG.markRead || !fullname || !/^t3_[a-z0-9]+$/i.test(fullname)) return;
+    loadRead();   // re-read first, so other tabs' entries aren't overwritten
+    readPosts[fullname] = Date.now();
+    saveRead();
+    applyRead(document);
+  }
+
+  function setHideRead(on) {
+    document.documentElement.classList.toggle("nw-hide-read", on);
+    try { localStorage.setItem(HIDE_READ_KEY, on ? "1" : "0"); }
+    catch (err) { /* storage blocked: lasts for this page only */ }
+  }
+
+  // Tag read posts in listings (not on a post's own page).
+  function applyRead(root) {
+    if (!CONFIG.markRead || document.body.classList.contains("comments-page")) return;
+    root.querySelectorAll(".thing.link[data-fullname]").forEach((post) => {
+      const read = Object.prototype.hasOwnProperty.call(readPosts, post.dataset.fullname);
+      if (read !== post.classList.contains("nw-read")) post.classList.toggle("nw-read", read);
+    });
+  }
+
+  function setupMarkRead() {
+    if (!CONFIG.markRead) return;
+    loadRead();
+
+    // This page is a post (full page or in the pane): it's read now.
+    const m = location.pathname.match(/\/comments\/([a-z0-9]+)/i);
+    if (m) markRead(`t3_${m[1].toLowerCase()}`);
+
+    // Clicking (or middle-clicking) a post's title, thumbnail or comments link.
+    const onOpen = (e) => {
+      if (e.type === "auxclick" && e.button !== 1) return;
+      const a = e.target.closest && e.target.closest("a.title, a.thumbnail, a.comments");
+      const post = a && a.closest(".thing.link[data-fullname]");
+      if (post) markRead(post.dataset.fullname);
+    };
+    document.addEventListener("click", onOpen, true);
+    document.addEventListener("auxclick", onOpen, true);
+
+    // Posts opened in other tabs, or in the pane (its own page writes too).
+    window.addEventListener("storage", (e) => {
+      if (e.key !== READ_KEY) return;
+      loadRead();
+      applyRead(document);
+    });
+  }
+
   /* ---------- 3k. Process the page + watch for new content ----------- */
   function process(root) {
+    applyRead(root);
     root.querySelectorAll(".thing.link").forEach(buildMeta);
     root.querySelectorAll(".thing.link .buttons a").forEach(iconize);
     root.querySelectorAll(".thing.comment").forEach(setDepth);
@@ -2174,6 +2371,7 @@
       headWatcher.disconnect();
     }
 
+    setupMarkRead();
     process(document);
 
     if (CONFIG.clickToCollapse) {

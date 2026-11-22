@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Reddit Tweaks (Narwhal-style old.reddit)
 // @description  Restyles old.reddit.com into a clean, minimal, app-like layout.
-// @version      1.2.0
+// @version      1.2.1
 // @updateURL    https://raw.githubusercontent.com/thombuilds/Userscripts/main/reddit.user.js
 // @downloadURL  https://raw.githubusercontent.com/thombuilds/Userscripts/main/reddit.user.js
 // @match        https://old.reddit.com/*
@@ -27,7 +27,7 @@
  *        3i. infinite scroll (loads the next page near the bottom)
  *        3j. modern touches: short times/counts, icon buttons, comment dots
  *        3k. watching for new content (new posts, "load more comments")
- *        3l. read posts (dimmed in listings, optional "Hide read")
+ *        3l. read posts (dimmed in listings)
  *
  * Every class name prefixed with "nw-" is ours (nw = Narwhal-ish), so it never
  * clashes with Reddit's own classes.
@@ -97,15 +97,13 @@
     // (instead of clicking "next ›").
     infiniteScroll: true,
 
-    // Remember which posts you've opened and dim them in listings. The
-    // "Hide read" pill in the favorites sidebar hides them completely.
+    // Remember which posts you've opened and dim them in listings.
     markRead: true,
   };
 
   // Read posts (3l): fullname → time opened, kept for 30 days.
   const READ_KEY = "nw-read-v1";
   const READ_DAYS = 30;
-  const HIDE_READ_KEY = "nw-hide-read-v1";
 
   // True when this page is running inside the split view's right pane.
   const IN_PANE = window.top !== window.self;
@@ -143,12 +141,6 @@
     if (wideFor(CONFIG.favoritesMinWidth)) {
       document.documentElement.classList.add("nw-favs-on");
     }
-    // "Hide read" on: set now, so read posts never flash in before hiding.
-    try {
-      if (CONFIG.markRead && localStorage.getItem(HIDE_READ_KEY) === "1") {
-        document.documentElement.classList.add("nw-hide-read");
-      }
-    } catch (err) { /* storage blocked: show everything */ }
   }
 
   // Arriving at a post from outside Reddit (Google, another app, a bookmark):
@@ -1230,7 +1222,7 @@
     .nw-fav-toggle:hover { color: var(--nw-text) !important; }
     .nw-fav-toggle.nw-on { color: var(--nw-accent) !important; }
 
-    /* Small pills under the search box: "Hide read", "Copy list" */
+    /* Small pill under the search box: "Copy list" */
     .nw-favs-tools {
       display: flex;
       flex-wrap: wrap;
@@ -1248,17 +1240,12 @@
       cursor: pointer;
     }
     .nw-favs-pill:hover { color: var(--nw-text) !important; }
-    .nw-favs-pill[aria-pressed="true"] {
-      background: color-mix(in srgb, var(--nw-accent) 14%, transparent) !important;
-      color: var(--nw-accent) !important;
-    }
 
     /* ---------- 2.15 Read posts (JS 3l) ----------------------------- */
-    /* The post open in the pane (.nw-selected) is never dimmed or hidden. */
+    /* The post open in the pane (.nw-selected) is never dimmed. */
     .thing.link.nw-read:not(.nw-selected) { opacity: 0.6; }
     .thing.link.nw-read:not(.nw-selected):hover { opacity: 1; }
     .thing.link.nw-read:not(.nw-selected) a.title { color: var(--nw-visited) !important; }
-    html.nw-hide-read .thing.link.nw-read:not(.nw-selected) { display: none !important; }
   `;
 
   // Inject immediately. At document-start <head> may not exist yet,
@@ -1853,8 +1840,6 @@
         <div class="nw-favs-label">Favorites</div>
         <input class="nw-favs-search" type="search" placeholder="Search" autocomplete="off">
         <div class="nw-favs-tools">
-          <button class="nw-favs-pill nw-favs-hide-read" type="button" aria-pressed="false"
-            title="Hide posts you've already opened">Hide read</button>
           <button class="nw-favs-pill nw-favs-copy" type="button"
             title="Copy this list as a line to paste into CONFIG.favorites">Copy list</button>
         </div>
@@ -1863,20 +1848,6 @@
     `;
     const list = box.querySelector(".nw-favs-list");
     const search = box.querySelector(".nw-favs-search");
-
-    // "Hide read" pill (3l).
-    const hideReadBtn = box.querySelector(".nw-favs-hide-read");
-    const syncHideRead = () => hideReadBtn.setAttribute("aria-pressed",
-      String(document.documentElement.classList.contains("nw-hide-read")));
-    if (CONFIG.markRead) {
-      hideReadBtn.addEventListener("click", () => {
-        setHideRead(!document.documentElement.classList.contains("nw-hide-read"));
-        syncHideRead();
-      });
-      syncHideRead();
-    } else {
-      hideReadBtn.remove();
-    }
 
     // "Copy list": the list as a line to paste into CONFIG.favorites.
     const copyBtn = box.querySelector(".nw-favs-copy");
@@ -2026,10 +1997,6 @@
 
     // Changes made in another tab show up here too.
     window.addEventListener("storage", (e) => {
-      if (e.key === HIDE_READ_KEY && CONFIG.markRead) {
-        document.documentElement.classList.toggle("nw-hide-read", e.newValue === "1");
-        syncHideRead();
-      }
       if (e.key !== FAV_KEY) return;
       favorites = loadFavorites();
       render();
@@ -2265,7 +2232,7 @@
   /* ---------- 3l. Read posts --------------------------------------- */
   // Opening a post (pane, title/thumbnail/comments link, or its own page)
   // remembers its fullname (t3_abc123) with the time. In listings those
-  // posts get .nw-read (CSS 2.15 dims them, or hides them with "Hide read").
+  // posts get .nw-read (CSS 2.15 dims them).
   let readPosts = {};
 
   // Load from storage, dropping entries older than READ_DAYS.
@@ -2292,12 +2259,6 @@
     readPosts[fullname] = Date.now();
     saveRead();
     applyRead(document);
-  }
-
-  function setHideRead(on) {
-    document.documentElement.classList.toggle("nw-hide-read", on);
-    try { localStorage.setItem(HIDE_READ_KEY, on ? "1" : "0"); }
-    catch (err) { /* storage blocked: lasts for this page only */ }
   }
 
   // Tag read posts in listings (not on a post's own page).

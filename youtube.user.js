@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube Tweaks (Podcasts page, player, compact Home)
 // @description  Separate "Podcasts" page in the sidebar; trimmed player (no subtitles/AirPlay, highest quality, minimal settings menu, Picture-in-Picture button); compact Home grid.
-// @version      1.8.5
+// @version      1.8.6
 // @updateURL    https://raw.githubusercontent.com/thombuilds/Userscripts/main/youtube.user.js
 // @downloadURL  https://raw.githubusercontent.com/thombuilds/Userscripts/main/youtube.user.js
 // @match        https://www.youtube.com/*
@@ -136,7 +136,7 @@
     debug: false,
   };
 
-  const VERSION = "1.8.5"; // keep in sync with @version; shown on the Podcasts page and in the console
+  const VERSION = "1.8.6"; // keep in sync with @version; shown on the Podcasts page and in the console
   const HASH = "#" + CONFIG.hash;
   const log = (...a) => CONFIG.debug && console.log("[YT Podcasts]", ...a);
 
@@ -221,7 +221,15 @@
   const AGO_RE =
     /(\d+)\s*(seconds?|secs?|minutes?|mins?|months?|mos?|hours?|hrs?|days?|weeks?|wks?|years?|yrs?|s|m|h|d|w|y)\s+ago\b/i;
   // "862K views", "1 view", "1.2K watching" (live). English UI only.
+  // Newer layouts drop the word and show just "862K" after a play icon.
   const VIEWS_RE = /\b(views?|watching)\b/i;
+  const BARE_COUNT_RE = /^\d[\d.,]*\s*[KMB]?$/i;
+  function viewsFrom(parts) {
+    const worded = parts.find((t) => /\d/.test(t) && VIEWS_RE.test(t));
+    if (worded) return worded;
+    const bare = parts.find((t) => BARE_COUNT_RE.test(t.trim()));
+    return bare ? `${bare.trim()} views` : "";
+  }
   const UNIT_SEC = { second: 1, minute: 60, hour: 3600, day: 86400, week: 604800, month: 2592000, year: 31536000 };
   function unitOf(u) {
     u = u.toLowerCase();
@@ -383,7 +391,7 @@
       channelUrl,
       durationText: badgeTexts.find((t) => DUR_RE.test(t.trim())) || "",
       publishedText: parts.find((t) => AGO_RE.test(t)) || "",
-      viewsText: parts.find((t) => /\d/.test(t) && VIEWS_RE.test(t)) || "",
+      viewsText: viewsFrom(parts),
       progress,
       badges: [...badgeTexts, ...parts.filter((t) => t.length <= 20)],
     });

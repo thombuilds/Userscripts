@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube Tweaks (Podcasts page, player, compact Home)
 // @description  Separate "Podcasts" page in the sidebar; trimmed player (no subtitles/AirPlay, highest quality, minimal settings menu, Picture-in-Picture button); compact Home grid.
-// @version      1.8.4
+// @version      1.8.5
 // @updateURL    https://raw.githubusercontent.com/thombuilds/Userscripts/main/youtube.user.js
 // @downloadURL  https://raw.githubusercontent.com/thombuilds/Userscripts/main/youtube.user.js
 // @match        https://www.youtube.com/*
@@ -136,7 +136,7 @@
     debug: false,
   };
 
-  const VERSION = "1.8.4"; // keep in sync with @version; shown on the Podcasts page and in the console
+  const VERSION = "1.8.5"; // keep in sync with @version; shown on the Podcasts page and in the console
   const HASH = "#" + CONFIG.hash;
   const log = (...a) => CONFIG.debug && console.log("[YT Podcasts]", ...a);
 
@@ -220,6 +220,8 @@
   // English UI only; other languages just show YouTube's text and sort after the dated ones.
   const AGO_RE =
     /(\d+)\s*(seconds?|secs?|minutes?|mins?|months?|mos?|hours?|hrs?|days?|weeks?|wks?|years?|yrs?|s|m|h|d|w|y)\s+ago\b/i;
+  // "862K views", "1 view", "1.2K watching" (live). English UI only.
+  const VIEWS_RE = /\b(views?|watching)\b/i;
   const UNIT_SEC = { second: 1, minute: 60, hour: 3600, day: 86400, week: 604800, month: 2592000, year: 31536000 };
   function unitOf(u) {
     u = u.toLowerCase();
@@ -297,7 +299,7 @@
    * 4. YOUTUBE DATA
    *    Every source ends up as the same plain "video" object:
    *    { id, title, channel, channelUrl, durationText, durationSec,
-   *      publishedText, progress (0-100), badges: [strings] }
+   *      publishedText, viewsText, progress (0-100), badges: [strings] }
    * ==================================================================== */
 
   function makeVideo(o) {
@@ -311,6 +313,7 @@
       durationText,
       durationSec: parseDuration(durationText),
       publishedText: (o.publishedText || "").trim(),
+      viewsText: (o.viewsText || "").trim(), // "862K views" / "1.2K watching"
       progress: Number(o.progress) || 0,
       badges: (o.badges || []).map((b) => String(b).trim()).filter(Boolean),
     };
@@ -336,6 +339,7 @@
       channelUrl: ownerNav?.browseEndpoint?.canonicalBaseUrl || ownerNav?.commandMetadata?.webCommandMetadata?.url,
       durationText: textOf(r.lengthText) || textOf(timeOv?.text),
       publishedText: textOf(r.publishedTimeText),
+      viewsText: textOf(r.shortViewCountText) || textOf(r.viewCountText),
       progress: resume?.percentDurationWatched,
       badges,
     });
@@ -379,6 +383,7 @@
       channelUrl,
       durationText: badgeTexts.find((t) => DUR_RE.test(t.trim())) || "",
       publishedText: parts.find((t) => AGO_RE.test(t)) || "",
+      viewsText: parts.find((t) => /\d/.test(t) && VIEWS_RE.test(t)) || "",
       progress,
       badges: [...badgeTexts, ...parts.filter((t) => t.length <= 20)],
     });
@@ -1163,7 +1168,7 @@
         h("a", { class: "ytpod-title", href: url, title: v.title, onclick: (e) => onWatchClick(e, v) }, v.title || "(untitled)"),
         h("div", { class: "ytpod-sub", title: v.publishedAt != null ? `Uploaded around ${new Date(v.publishedAt).toLocaleString()}` : null },
           v.channelUrl ? h("a", { href: v.channelUrl }, v.channel) : v.channel,
-          v.channel && when ? " • " : "", when),
+          [v.viewsText, when].filter(Boolean).map((t, i) => (i || v.channel ? " • " : "") + t).join("")),
         h("div", { class: "ytpod-actions" },
           h("button", {
             class: "ytpod-btn" + (ov?.val === "pod" ? " ytpod-on" : ""),

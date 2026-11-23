@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube Tweaks (Podcasts page, player, compact Home)
 // @description  Separate "Podcasts" page in the sidebar; trimmed player (no subtitles/AirPlay, highest quality, minimal settings menu, Picture-in-Picture button); compact Home grid.
-// @version      1.9.1
+// @version      1.9.2
 // @updateURL    https://raw.githubusercontent.com/thombuilds/Userscripts/main/youtube.user.js
 // @downloadURL  https://raw.githubusercontent.com/thombuilds/Userscripts/main/youtube.user.js
 // @match        https://www.youtube.com/*
@@ -143,7 +143,7 @@
     debug: false,
   };
 
-  const VERSION = "1.9.1"; // keep in sync with @version; shown on the Podcasts page and in the console
+  const VERSION = "1.9.2"; // keep in sync with @version; shown on the Podcasts page and in the console
   const HASH = "#" + CONFIG.hash;
   const log = (...a) => CONFIG.debug && console.log("[YT Podcasts]", ...a);
 
@@ -649,6 +649,18 @@
       alias[key] = key;
       if (info.name) alias[normName(info.name)] ||= key;
       if (info.handle) alias[normName(info.handle)] ||= key;
+    }
+    // Old marks saved by name only ("digital foundry"): match them to a known
+    // handle spelled the same without spaces ("@digitalfoundry", "@outdoortom9675").
+    const handles = [...Object.keys(scriptMarks), ...Object.keys(overrides.channels)].filter((k) => k.startsWith("@"));
+    for (const k of Object.keys(overrides.channels)) {
+      if (alias[k] || k.startsWith("@")) continue;
+      const squashed = k.replace(/[^a-z0-9]/g, "");
+      const hit = squashed && handles.find((hk) => {
+        const bare = hk.slice(1).replace(/[^a-z0-9]/g, "");
+        return bare === squashed || (bare.startsWith(squashed) && /^\d+$/.test(bare.slice(squashed.length)));
+      });
+      if (hit) alias[k] = alias[hit] || hit;
     }
     const byKey = new Map();
     const add = (rawKey, label, fromScript) => {

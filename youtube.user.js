@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube Tweaks (Podcasts page, player, compact Home)
 // @description  Separate "Podcasts" page in the sidebar; trimmed player (no subtitles/AirPlay, highest quality, minimal settings menu, Picture-in-Picture button); compact Home grid.
-// @version      1.8.6
+// @version      1.9.0
 // @updateURL    https://raw.githubusercontent.com/thombuilds/Userscripts/main/youtube.user.js
 // @downloadURL  https://raw.githubusercontent.com/thombuilds/Userscripts/main/youtube.user.js
 // @match        https://www.youtube.com/*
@@ -58,6 +58,9 @@
    * ==================================================================== */
   const CONFIG = {
     // Channel names (as shown on YouTube) or handles ("@lexfridman"). Case-insensitive.
+    // These lists are what every computer shares. The "Always podcast" / "Not a
+    // podcast" buttons only save in this browser; on the Podcasts page, "Not
+    // podcasts" → "Copy for script" gives both lines to paste over these two.
     podcastChannels: [
       // "Lex Fridman",
       // "@hubermanlab",
@@ -136,7 +139,7 @@
     debug: false,
   };
 
-  const VERSION = "1.8.6"; // keep in sync with @version; shown on the Podcasts page and in the console
+  const VERSION = "1.9.0"; // keep in sync with @version; shown on the Podcasts page and in the console
   const HASH = "#" + CONFIG.hash;
   const log = (...a) => CONFIG.debug && console.log("[YT Podcasts]", ...a);
 
@@ -166,9 +169,13 @@
   let overrides = store.get("overrides", { videos: {}, channels: {} });
   overrides.videos ||= {};
   overrides.channels ||= {};
+  // Display info for channels marked with the buttons, keyed by the channel's
+  // main key (its @handle, else its name): { name, handle }.
+  overrides.info ||= {};
   const saveOverrides = () => store.set("overrides", overrides);
 
-  const prefs = store.get("prefs", { showHidden: false });
+  const prefs = store.get("prefs", {});
+  delete prefs.showHidden; // the "Show non-podcasts" toggle is gone (1.9)
   const savePrefs = () => store.set("prefs", prefs);
 
   /* ======================================================================
@@ -513,28 +520,52 @@
 
   function channelKeys(v) {
     const keys = [normName(v.channel)];
-    const handle = /\/(@[^/?#]+)/.exec(v.channelUrl || "");
-    if (handle) keys.push(normName(decodeURIComponent(handle[1])));
+    const handle = channelHandle(v);
+    if (handle) keys.push(normName(handle));
     return keys.filter(Boolean);
   }
+
+  /** "@handle" from the channel URL, or "". */
+  function channelHandle(v) {
+    const m = /\/(@[^/?#]+)/.exec(v.channelUrl || "");
+    return m ? decodeURIComponent(m[1]) : "";
+  }
+
+  /** The key a channel is listed under: its @handle if known, else its name. */
+  const mainKey = (v) => normName(channelHandle(v) || v.channel);
 
   const inList = (list, v) => {
     const keys = channelKeys(v);
     return list.some((x) => keys.includes(normName(x)));
   };
 
+  // The script's lists as { key: "pod" | "not" } (notPodcastChannels wins a tie).
+  const scriptMarks = {};
+  for (const x of CONFIG.podcastChannels) scriptMarks[normName(x)] = "pod";
+  for (const x of CONFIG.notPodcastChannels) scriptMarks[normName(x)] = "not";
+
+  /**
+   * What applies to this tile: your button choice (video, then channel), else
+   * the script's lists. Local "none" means "you removed it; ignore the script's
+   * list for this channel". → { val: "pod" | "not", scope, from } or null
+   */
   function overrideFor(v) {
-    if (overrides.videos[v.id]) return { val: overrides.videos[v.id], scope: "video" };
-    for (const k of channelKeys(v)) if (overrides.channels[k]) return { val: overrides.channels[k], scope: "channel" };
+    if (overrides.videos[v.id]) return { val: overrides.videos[v.id], scope: "video", from: "you" };
+    const keys = channelKeys(v);
+    for (const k of keys) {
+      const val = overrides.channels[k];
+      if (val === "none") return null;
+      if (val) return { val, scope: "channel", from: "you" };
+    }
+    for (const k of keys) if (scriptMarks[k]) return { val: scriptMarks[k], scope: "channel", from: "script" };
     return null;
   }
 
   /** → { isPodcast, reason } */
   function classify(v) {
     const ov = overrideFor(v);
-    if (ov) return { isPodcast: ov.val === "pod", reason: `Marked by you (${ov.scope === "video" ? "this video" : "channel"})` };
-    if (inList(CONFIG.notPodcastChannels, v)) return { isPodcast: false, reason: "In notPodcastChannels" };
-    if (inList(CONFIG.podcastChannels, v)) return { isPodcast: true, reason: "In podcastChannels" };
+    if (ov?.from === "you") return { isPodcast: ov.val === "pod", reason: `Marked by you (${ov.scope === "video" ? "this video" : "channel"})` };
+    if (ov) return { isPodcast: ov.val === "pod", reason: ov.val === "pod" ? "In podcastChannels" : "In notPodcastChannels" };
     // UNSURE: whether/where YouTube exposes a "Podcast" label on feed tiles.
     if (CONFIG.useYouTubeBadge && v.badges?.some((b) => /^podcast$/i.test(b))) return { isPodcast: true, reason: "YouTube Podcast badge" };
     if (v.durationSec != null && v.durationSec >= CONFIG.minDurationMinutes * 60)
@@ -544,27 +575,30 @@
     return { isPodcast: false, reason: "No podcast signal" };
   }
 
-  /**
-   * Button handler. Clicking the button that's already on clears the override.
-   * Clicking with Alt flips CONFIG.overrideScope for that one click.
-   */
-  function setOverride(v, val, flipScope) {
-    const snapshot = JSON.stringify(overrides);
-    const scope = (CONFIG.overrideScope === "video") !== !!flipScope ? "video" : "channel";
-    const current = overrideFor(v);
-    // Clear anything that applies to this tile, then set the new value (unless toggling off).
-    delete overrides.videos[v.id];
-    for (const k of channelKeys(v)) delete overrides.channels[k];
-    let msg;
-    if (current?.val === val) {
-      msg = "Override cleared";
-    } else if (scope === "video") {
-      overrides.videos[v.id] = val;
-      msg = `This video → ${val === "pod" ? "always podcast" : "not a podcast"}`;
-    } else {
-      for (const k of channelKeys(v)) overrides.channels[k] = val;
-      msg = `${v.channel || "Channel"} → ${val === "pod" ? "always podcast" : "not a podcast"}`;
+  /** Remember a channel's name and handle so the Marked channels list can show it. → changed? */
+  function rememberChannel(v) {
+    const key = mainKey(v);
+    if (!key) return false;
+    const info = { name: v.channel || "", handle: channelHandle(v) };
+    const old = overrides.info[key];
+    if (old && old.name === info.name && old.handle === info.handle) return false;
+    overrides.info[key] = info;
+    return true;
+  }
+
+  /** Drop your choices for these channel keys; where the script lists one, store "none" so it stays off. */
+  function clearChannelKeys(keys) {
+    for (const k of keys) {
+      delete overrides.channels[k];
+      delete overrides.info[k];
     }
+    if (keys.some((k) => scriptMarks[k])) for (const k of keys) overrides.channels[k] = "none";
+  }
+
+  /** Change overrides (fn returns the toast message), save, re-render, and offer Undo. */
+  function changeOverrides(fn) {
+    const snapshot = JSON.stringify(overrides);
+    const msg = fn();
     saveOverrides();
     render();
     toast(msg, () => {
@@ -572,6 +606,100 @@
       saveOverrides();
       render();
     });
+  }
+
+  /**
+   * Button handler. Clicking the button that's already on clears the override.
+   * Clicking with Alt flips CONFIG.overrideScope for that one click.
+   */
+  function setOverride(v, val, flipScope) {
+    const scope = (CONFIG.overrideScope === "video") !== !!flipScope ? "video" : "channel";
+    const current = overrideFor(v);
+    changeOverrides(() => {
+      if (current?.val === val) {
+        // Toggle off whatever made this button "on".
+        if (current.scope === "video") delete overrides.videos[v.id];
+        else clearChannelKeys(channelKeys(v));
+        return "Override cleared";
+      }
+      delete overrides.videos[v.id];
+      if (scope === "video") {
+        overrides.videos[v.id] = val;
+        return `This video → ${val === "pod" ? "always podcast" : "not a podcast"}`;
+      }
+      clearChannelKeys(channelKeys(v));
+      for (const k of channelKeys(v)) overrides.channels[k] = val;
+      rememberChannel(v);
+      return `${v.channel || "Channel"} → ${val === "pod" ? "always podcast" : "not a podcast"}`;
+    });
+  }
+
+  /**
+   * Channels marked "pod" or "not", one entry per channel, from your buttons
+   * and the script's lists. → [{ keys, name, handle, label, inScript }]
+   */
+  function markedChannels(val) {
+    // Every known key (name or handle) → the channel's main key.
+    const alias = {};
+    for (const [key, info] of Object.entries(overrides.info)) {
+      alias[key] = key;
+      if (info.name) alias[normName(info.name)] ||= key;
+      if (info.handle) alias[normName(info.handle)] ||= key;
+    }
+    const byKey = new Map();
+    const add = (rawKey, label, fromScript) => {
+      const key = alias[rawKey] || rawKey;
+      let e = byKey.get(key);
+      if (!e) {
+        const info = overrides.info[key] || {};
+        e = { keys: new Set([key]), name: info.name || "", handle: info.handle || (label.startsWith("@") ? label : ""), label, inScript: false };
+        byKey.set(key, e);
+      }
+      e.keys.add(rawKey);
+      if (fromScript) e.inScript = true;
+    };
+    for (const [k, v] of Object.entries(overrides.channels)) if (v === val) add(k, k, false);
+    const list = val === "pod" ? CONFIG.podcastChannels : CONFIG.notPodcastChannels;
+    for (const x of list) {
+      const k = normName(x);
+      const mine = overrides.channels[k];
+      if (scriptMarks[k] === val && (!mine || mine === val)) add(k, x.trim(), true);
+    }
+    const out = [...byKey.values()].map((e) => ({ ...e, keys: [...e.keys] }));
+    // Include every key that points at the same channel, so removing clears them all.
+    for (const e of out) for (const [k, main] of Object.entries(alias)) if (main === e.keys[0] && !e.keys.includes(k)) e.keys.push(k);
+    for (const e of out) e.display = e.name || e.label;
+    return out.sort((a, b) => a.display.localeCompare(b.display, undefined, { sensitivity: "base" }));
+  }
+
+  /** The two CONFIG lines with everything currently marked. */
+  function configLines() {
+    const line = (name, val) => {
+      const items = markedChannels(val).map((e) => e.handle || e.name || e.label);
+      return `${name}: [${[...new Set(items)].map((x) => JSON.stringify(x)).join(", ")}],`;
+    };
+    return line("podcastChannels", "pod") + "\n" + line("notPodcastChannels", "not");
+  }
+
+  // Copy text to the clipboard; true if it worked.
+  async function copyText(text) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch {
+      const ta = h("textarea", { style: { position: "fixed", top: "0", left: "0", opacity: "0" } });
+      ta.value = text;
+      document.body.appendChild(ta);
+      ta.select();
+      let ok = false;
+      try {
+        ok = document.execCommand("copy");
+      } catch {
+        /* no luck */
+      }
+      ta.remove();
+      return ok;
+    }
   }
 
   /* ======================================================================
@@ -829,7 +957,6 @@
     .ytpod-version { font: 400 12px/1 Roboto, Arial, sans-serif; color: var(--ytpod-text2); align-self: flex-end; margin-bottom: 6px; }
     .ytpod-head h1 svg { width: 32px; height: 32px; fill: currentColor; }
     .ytpod-head-actions { margin-left: auto; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
-    .ytpod-toggle { display: flex; align-items: center; gap: 6px; font-size: 14px; color: var(--ytpod-text2); cursor: pointer; }
 
     .ytpod-status { font-size: 13px; color: var(--ytpod-text2); min-height: 18px; }
     .ytpod-status.ytpod-error { color: var(--ytpod-red); }
@@ -842,8 +969,6 @@
 
     /* ---- tiles ---- */
     .ytpod-tile { min-width: 0; transition: opacity .15s; }
-    .ytpod-tile.ytpod-dim { opacity: .45; }
-    .ytpod-tile.ytpod-dim:hover { opacity: 1; }
     .ytpod-thumb {
       position: relative; display: block; aspect-ratio: 16 / 9; overflow: hidden;
       border-radius: 12px; background: var(--ytpod-chip);
@@ -887,6 +1012,33 @@
     .ytpod-more:hover { background: var(--ytpod-chip); }
     .ytpod-more[disabled] { opacity: .6; cursor: default; }
     .ytpod-empty { grid-column: 1 / -1; font-size: 14px; color: var(--ytpod-text2); }
+
+    /* ---- "Marked channels" dialog ---- */
+    .ytpod-dialog-back {
+      position: fixed; inset: 0; z-index: 2000; background: rgba(0,0,0,.5);
+      display: flex; align-items: flex-start; justify-content: center; padding: 72px 16px 16px;
+    }
+    .ytpod-dialog {
+      width: min(520px, 100%); max-height: calc(100vh - 100px); overflow-y: auto; box-sizing: border-box;
+      background: var(--ytpod-bg); color: var(--ytpod-text); border-radius: 12px; padding: 16px 20px 20px;
+      box-shadow: 0 8px 32px rgba(0,0,0,.35);
+    }
+    .ytpod-dialog-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+    .ytpod-dialog h2 { margin: 0; font: 700 20px/28px Roboto, Arial, sans-serif; }
+    .ytpod-dialog h3 { margin: 16px 0 6px; font: 500 16px/22px Roboto, Arial, sans-serif; }
+    .ytpod-dialog ul { list-style: none; margin: 0; padding: 0; }
+    .ytpod-dialog li {
+      display: flex; align-items: center; gap: 8px; padding: 6px 0;
+      border-bottom: 1px solid var(--ytpod-hover); font: 400 14px/20px Roboto, Arial, sans-serif;
+    }
+    .ytpod-dialog li > a, .ytpod-dialog li > span:first-child { color: var(--ytpod-text); text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .ytpod-dialog li > a:hover { text-decoration: underline; }
+    .ytpod-dialog li > button { margin-left: auto; flex: none; }
+    .ytpod-handle { color: var(--ytpod-text2); font-size: 12px; white-space: nowrap; }
+    .ytpod-tag { flex: none; font-size: 11px; padding: 1px 6px; border-radius: 8px; background: var(--ytpod-chip); color: var(--ytpod-text2); }
+    .ytpod-dialog-empty { margin: 0; font-size: 14px; color: var(--ytpod-text2); }
+    .ytpod-dialog-foot { margin-top: 20px; display: flex; flex-direction: column; align-items: flex-start; gap: 10px; }
+    .ytpod-dialog-foot p { margin: 0; font-size: 13px; line-height: 18px; color: var(--ytpod-text2); }
 
     /* ---- toast with Undo ---- */
     #ytpod-toast {
@@ -999,23 +1151,21 @@
   const TAB_TITLES = { subs: "From your subscriptions", rec: "Recommended" };
   if (!TAB_TITLES[prefs.tab]) prefs.tab = "subs";
 
+  let markedBtn = null; // header button "Marked channels (N)"
+  let markedDialog = null; // the open list, or null
+
   function buildPage() {
-    const toggle = h("input", {
-      type: "checkbox",
-      onchange: (e) => {
-        prefs.showHidden = e.target.checked;
-        savePrefs();
-        render();
-      },
+    markedBtn = h("button", {
+      class: "ytpod-btn ytpod-big",
+      title: "Channels you marked as not a podcast (or always a podcast)",
+      onclick: openMarked,
     });
-    toggle.checked = !!prefs.showHidden;
 
     pageEl = h("div", { id: "ytpod-page" },
       h("div", { class: "ytpod-head" },
         h("h1", {}, podcastIcon(), "Podcasts", h("span", { class: "ytpod-version", title: "Script version" }, "v" + VERSION)),
         h("div", { class: "ytpod-head-actions" },
-          h("label", { class: "ytpod-toggle", title: "Also show videos the classifier skipped, so you can mark them" },
-            toggle, "Show non-podcasts"),
+          markedBtn,
           h("button", { class: "ytpod-btn ytpod-big", onclick: () => ensureFeedsLoaded(true) }, "Refresh"))),
       h("div", { class: "ytpod-tabs" }, buildTab("subs"), buildTab("rec")),
       buildSection("subs"),
@@ -1122,15 +1272,96 @@
 
   function render() {
     if (!pageEl || !state.open) return;
-    renderSection("subs", subsList(), state.feeds.subs);
-    renderSection("rec", recList(), state.feeds.home);
+    const subs = subsList();
+    const rec = recList();
+    backfillChannelInfo([...subs, ...rec]);
+    renderSection("subs", subs, state.feeds.subs);
+    renderSection("rec", rec, state.feeds.home);
+    markedBtn.textContent = `Not podcasts (${markedChannels("not").length})`;
+    if (markedDialog) renderMarked();
     ensureGuideEntries();
+  }
+
+  /** Channels marked before 1.9 have no saved name/handle; fill it in when one of their videos shows up. */
+  function backfillChannelInfo(list) {
+    let changed = false;
+    for (const { v } of list) {
+      const keys = channelKeys(v);
+      if (overrides.info[mainKey(v)] || !keys.some((k) => overrides.channels[k] === "pod" || overrides.channels[k] === "not")) continue;
+      // Old marks may be saved under the name only: give the handle the same value.
+      const val = keys.map((k) => overrides.channels[k]).find((x) => x === "pod" || x === "not");
+      for (const k of keys) overrides.channels[k] ||= val;
+      changed = rememberChannel(v) || changed;
+    }
+    if (changed) saveOverrides();
+  }
+
+  /* ---- "Not podcasts" list ---- */
+
+  function openMarked() {
+    if (markedDialog) return closeMarked();
+    markedDialog = h("div", { class: "ytpod-dialog-back", onclick: (e) => e.target === markedDialog && closeMarked() });
+    pageEl.appendChild(markedDialog);
+    document.addEventListener("keydown", onMarkedKey, true);
+    renderMarked();
+  }
+
+  function closeMarked() {
+    markedDialog?.remove();
+    markedDialog = null;
+    document.removeEventListener("keydown", onMarkedKey, true);
+  }
+
+  function onMarkedKey(e) {
+    if (e.key !== "Escape") return;
+    e.stopPropagation();
+    closeMarked();
+  }
+
+  function renderMarked() {
+    const group = (val, title, empty) => {
+      const list = markedChannels(val);
+      return h("div", { class: "ytpod-dialog-group" },
+        h("h3", {}, title, h("span", { class: "ytpod-tab-count" }, String(list.length))),
+        list.length
+          ? h("ul", {}, list.map((e) => h("li", {},
+              e.handle ? h("a", { href: `/${encodeURIComponent(e.handle).replace(/^%40/, "@")}`, onclick: closeMarked }, e.display) : h("span", {}, e.display),
+              e.handle && e.name && h("span", { class: "ytpod-handle" }, e.handle),
+              e.inScript && h("span", { class: "ytpod-tag", title: "In the script's CONFIG, so it applies on every computer" }, "in script"),
+              h("button", {
+                class: "ytpod-btn",
+                title: "Remove (back to automatic detection)",
+                onclick: () => changeOverrides(() => {
+                  clearChannelKeys(e.keys);
+                  return `${e.display} removed`;
+                }),
+              }, "Remove"))))
+          : h("p", { class: "ytpod-dialog-empty" }, empty));
+    };
+    const copyBtn = h("button", { class: "ytpod-btn ytpod-big" }, "Copy for script");
+    copyBtn.addEventListener("click", async () => {
+      copyBtn.textContent = (await copyText(configLines())) ? "Copied" : "Copy failed";
+      setTimeout(() => (copyBtn.textContent = "Copy for script"), 1500);
+    });
+    const notLocal = (val) => markedChannels(val).filter((e) => !e.inScript).length;
+    const pending = notLocal("not") + notLocal("pod");
+    markedDialog.replaceChildren(h("div", { class: "ytpod-dialog", role: "dialog", "aria-label": "Marked channels" },
+      h("div", { class: "ytpod-dialog-head" },
+        h("h2", {}, "Marked channels"),
+        h("button", { class: "ytpod-btn", onclick: closeMarked, "aria-label": "Close" }, "✕")),
+      group("not", "Not podcasts", "None yet. Use “Not a podcast” on a tile."),
+      group("pod", "Always podcast", "None."),
+      h("div", { class: "ytpod-dialog-foot" },
+        h("p", {}, pending
+          ? `${pending} saved only in this browser. To use them on every computer, copy them and paste over podcastChannels / notPodcastChannels in the script's CONFIG.`
+          : "Everything here is in the script, so it's the same on every computer."),
+        copyBtn)));
   }
 
   function renderSection(kind, list, feed) {
     const s = sections[kind];
     const podcasts = list.filter((x) => x.cls.isPodcast);
-    const shown = prefs.showHidden ? list : podcasts;
+    const shown = podcasts;
 
     tabs[kind].count.textContent = feed.loading && !podcasts.length ? "…" : String(podcasts.length);
     tabs[kind].btn.classList.toggle("ytpod-on", prefs.tab === kind);
@@ -1167,7 +1398,7 @@
       : v.publishedText;
 
     // Watched videos are never hidden; they just get the red progress bar.
-    return h("div", { class: "ytpod-tile" + (cls.isPodcast ? "" : " ytpod-dim") },
+    return h("div", { class: "ytpod-tile" },
       h("a", { class: "ytpod-thumb" + (progress > 0 ? " ytpod-has-prog" : ""), href: url, onclick: (e) => onWatchClick(e, v) },
         h("img", { src: `https://i.ytimg.com/vi/${encodeURIComponent(v.id)}/mqdefault.jpg`, alt: "", loading: "lazy" }),
         v.durationText && h("span", { class: "ytpod-dur" }, v.durationText),
@@ -1232,6 +1463,7 @@
   }
 
   function closePodcasts({ restoreScroll = true } = {}) {
+    closeMarked();
     if (!state.open) return;
     state.open = false;
     clearInterval(state.posTimer);

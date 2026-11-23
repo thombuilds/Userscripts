@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube Tweaks (Podcasts page, player, compact Home)
 // @description  Separate "Podcasts" page in the sidebar; trimmed player (no subtitles/AirPlay, highest quality, minimal settings menu, Picture-in-Picture button); compact Home grid.
-// @version      1.9.2
+// @version      1.9.3
 // @updateURL    https://raw.githubusercontent.com/thombuilds/Userscripts/main/youtube.user.js
 // @downloadURL  https://raw.githubusercontent.com/thombuilds/Userscripts/main/youtube.user.js
 // @match        https://www.youtube.com/*
@@ -143,7 +143,7 @@
     debug: false,
   };
 
-  const VERSION = "1.9.2"; // keep in sync with @version; shown on the Podcasts page and in the console
+  const VERSION = "1.9.3"; // keep in sync with @version; shown on the Podcasts page and in the console
   const HASH = "#" + CONFIG.hash;
   const log = (...a) => CONFIG.debug && console.log("[YT Podcasts]", ...a);
 
@@ -372,6 +372,8 @@
     const rows = md.metadata?.contentMetadataViewModel?.metadataRows || [];
     const firstRow = rows[0]?.metadataParts || [];
     const parts = rows.flatMap((r) => (r.metadataParts || []).map((p) => textOf(p.text)).filter(Boolean));
+    // Any UI language: the row after the channel is usually [views, upload time].
+    const statRow = rows.slice(1).map((r) => (r.metadataParts || []).map((p) => textOf(p.text)).filter(Boolean)).find((r) => r.length >= 2) || [];
 
     let channelUrl = "";
     walk([md.image, firstRow], (o) => {
@@ -401,8 +403,8 @@
       channel: textOf(firstRow[0]?.text),
       channelUrl,
       durationText: badgeTexts.find((t) => DUR_RE.test(t.trim())) || "",
-      publishedText: parts.find((t) => AGO_RE.test(t)) || "",
-      viewsText: viewsFrom(parts),
+      publishedText: parts.find((t) => AGO_RE.test(t)) || statRow[statRow.length - 1] || "",
+      viewsText: viewsFrom(parts) || statRow[0] || "",
       progress,
       badges: [...badgeTexts, ...parts.filter((t) => t.length <= 20)],
     });

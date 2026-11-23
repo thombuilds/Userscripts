@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube Tweaks (Podcasts page, player, compact Home)
 // @description  Separate "Podcasts" page in the sidebar; trimmed player (no subtitles/AirPlay, highest quality, minimal settings menu, Picture-in-Picture button); compact Home grid.
-// @version      1.9.4
+// @version      1.9.5
 // @updateURL    https://raw.githubusercontent.com/thombuilds/Userscripts/main/youtube.user.js
 // @downloadURL  https://raw.githubusercontent.com/thombuilds/Userscripts/main/youtube.user.js
 // @match        https://www.youtube.com/*
@@ -66,11 +66,12 @@
       // "@hubermanlab",
     ],
     notPodcastChannels: [
-      "@digitalfoundry", "@ditterbitter", "@emilisjokubas", "@EnesYilmazer", "@gazasdugnastv",
-      "@happery", "@jesse", "@KillTony", "@Limpwurt", "@MatArmstrongbmx", "@matarmstrongmk2",
-      "@MrBallen", "@MyNameIsB0aty", "@N3on", "@nadeshot", "@outdoorboys", "@outdoortom9675",
+      "@trentthetraveler", "@DronAndrej", "@AurimasValujavicius", "digital foundry", "@DitterBitter",
+      "@emilisjokubas", "@EnesYilmazer", "@GazasDugnasTV", "@Happery", "jesse", "@KillTony",
+      "@Limpwurt", "@MatArmstrongbmx", "@matarmstrongmk2", "Mat Armstrong MK2", "@MrBallen",
+      "@MyNameIsB0aty", "@N3on", "@Nadeshot", "@ohnepixelraw", "@OutdoorBoys", "@outdoortom9675",
       "@Pauliussamoska", "@Ryantwomeyy", "@ShortCircuit", "@TheHamiltonCollection", "@thisis",
-      "@trentthetraveler", "@Vox", "@whistlindiesel", "@xQcOW",
+      "Trent The Traveler", "Vox", "@Vox", "@whistlindiesel", "@xQcOW",
     ],
 
     // A video at least this long counts as a podcast.
@@ -143,7 +144,7 @@
     debug: false,
   };
 
-  const VERSION = "1.9.4"; // keep in sync with @version; shown on the Podcasts page and in the console
+  const VERSION = "1.9.5"; // keep in sync with @version; shown on the Podcasts page and in the console
   const HASH = "#" + CONFIG.hash;
   const log = (...a) => CONFIG.debug && console.log("[YT Podcasts]", ...a);
 

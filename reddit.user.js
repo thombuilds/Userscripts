@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Reddit Tweaks (Narwhal-style old.reddit)
 // @description  Restyles old.reddit.com into a clean, minimal, app-like layout.
-// @version      1.2.1
+// @version      1.2.2
 // @updateURL    https://raw.githubusercontent.com/thombuilds/Userscripts/main/reddit.user.js
 // @downloadURL  https://raw.githubusercontent.com/thombuilds/Userscripts/main/reddit.user.js
 // @match        https://old.reddit.com/*
@@ -132,7 +132,7 @@
   // Guess the layout right away (from the URL and window width), so the page
   // doesn't render centered first and then jump left. Section 3e/3g correct
   // the guess once the page has loaded.
-  const NOT_A_LISTING = /\/(comments|prefs|message|submit|wiki|settings|login|register)\b/i;
+  const NOT_A_LISTING = /\/(comments|prefs|message|submit|wiki|settings|login|register|search)\b/i;
   if (!IN_PANE) {
     const wideFor = (px) => window.matchMedia(`(min-width: ${px}px)`).matches;
     if (CONFIG.splitView && !NOT_A_LISTING.test(location.pathname) && wideFor(CONFIG.splitMinWidth)) {
@@ -825,8 +825,8 @@
     .midcol .arrow.downmod         /* you downvoted */
     { opacity: 1 !important; }
     .midcol .score { color: var(--nw-text-muted) !important; }
-    .midcol .score.likes    { color: #ff9500 !important; }
-    .midcol .score.dislikes { color: #5856d6 !important; }
+    .midcol .score.likes    { color: var(--nw-upvote) !important; }
+    .midcol .score.dislikes { color: var(--nw-downvote) !important; }
 
     /* Vertical vote pill on the left ( ▲ / score / ▼ ). It's Reddit's own
        vote column (.midcol), just restyled, so voting is untouched. */
@@ -1635,16 +1635,26 @@
         "Reddit blocked loading this here. Use “Open ↗”.";
       return;
     }
+    if (doc.location.href === "about:blank") return; // pane was just closed
+
+    // The pane may have moved to another thread (a /comments/ link clicked
+    // inside it), so refresh the bar and the list highlight on every load.
+    const t = doc.querySelector(".thing.link a.title");
+    pane.querySelector(".nw-pane-title").textContent = t ? t.textContent : doc.title;
+    pane.querySelector(".nw-pane-open").href = doc.location.href;
+
+    // Highlight the list post matching the loaded thread (none if it isn't in the list).
+    const m = doc.location.pathname.match(/\/comments\/([a-z0-9]+)/i);
+    const match = m &&
+      document.querySelector(`#siteTable .thing.link[data-fullname="t3_${m[1].toLowerCase()}"]`);
+    if (selectedPost !== match) {
+      if (selectedPost) selectedPost.classList.remove("nw-selected");
+      selectedPost = match || null;
+      if (selectedPost) selectedPost.classList.add("nw-selected");
+    }
 
     // Backup in case the Userscripts app didn't run this script inside the
     // frame: at least copy our styles in. (Collapse/depth lines need the script.)
-    // No title yet (post wasn't in the list): take it from the loaded page.
-    const paneTitle = pane.querySelector(".nw-pane-title");
-    if (!paneTitle.textContent) {
-      const t = doc.querySelector(".thing.link a.title");
-      paneTitle.textContent = t ? t.textContent : doc.title;
-    }
-
     doc.documentElement.classList.add("nw-in-pane", "nw-styled");
     if (!doc.getElementById("nw-style")) {
       const copy = doc.createElement("style");

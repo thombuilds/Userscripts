@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube Tweaks (Podcasts page, player, compact Home)
 // @description  Separate "Podcasts" page in the sidebar; trimmed player (no subtitles/AirPlay, highest quality, minimal settings menu, Picture-in-Picture button); compact Home grid.
-// @version      1.9.5
+// @version      1.9.6
 // @updateURL    https://raw.githubusercontent.com/thombuilds/Userscripts/main/youtube.user.js
 // @downloadURL  https://raw.githubusercontent.com/thombuilds/Userscripts/main/youtube.user.js
 // @match        https://www.youtube.com/*
@@ -144,7 +144,7 @@
     debug: false,
   };
 
-  const VERSION = "1.9.5"; // keep in sync with @version; shown on the Podcasts page and in the console
+  const VERSION = "1.9.6"; // keep in sync with @version; shown on the Podcasts page and in the console
   const HASH = "#" + CONFIG.hash;
   const log = (...a) => CONFIG.debug && console.log("[YT Podcasts]", ...a);
 
@@ -252,6 +252,11 @@
   function ageToTimestamp(text, base) {
     const m = AGO_RE.exec(text || "");
     return m ? base - Number(m[1]) * UNIT_SEC[unitOf(m[2])] * 1000 : null;
+  }
+  /** The unit of "3 days ago" ("day"), or null. Tells how exact publishedAt really is. */
+  function ageUnit(text) {
+    const m = AGO_RE.exec(text || "");
+    return m ? unitOf(m[2]) : null;
   }
   /** "Nov 18" (adds the year if it isn't this year). */
   function shortDate(ts) {
@@ -834,7 +839,7 @@
         if (f.items.has(v.id)) continue;
         v.order = ++state.order;
         v.publishedAt = ageToTimestamp(v.publishedText, f.baseTime);
-        v.fresh = true;
+        v.publishedUnit = ageUnit(v.publishedText);
         f.items.set(v.id, v);
         if (classify(v).isPodcast) newPods++;
       }
@@ -1216,6 +1221,7 @@
 
   function buildSection(kind) {
     const s = {
+      tileCache: new Map(), // video id → { el, sig } (see renderSection)
       status: h("div", { class: "ytpod-status" }),
       grid: h("div", { class: "ytpod-grid" }),
       more: h("button", { class: "ytpod-more", onclick: () => loadFeed(kind === "subs" ? "subs" : "home", { more: true }) }, "Load more"),
@@ -1392,14 +1398,33 @@
     s.status.textContent = status;
     s.status.classList.toggle("ytpod-error", !!feed.error);
 
-    const tiles = shown.map(renderTile);
+    // Reuse tiles whose content hasn't changed, so "Load more" and the buttons
+    // don't rebuild (and flicker) the whole grid. One cache per section: a video
+    // can be in both tabs, and one element can't sit in two grids.
+    const tiles = shown.map((x) => {
+      const sig = tileSig(x);
+      const hit = s.tileCache.get(x.v.id);
+      if (hit && hit.sig === sig) return hit.el;
+      const el = renderTile(x);
+      s.tileCache.set(x.v.id, { el, sig });
+      return el;
+    });
+    for (const id of s.tileCache.keys()) if (!feed.items.has(id)) s.tileCache.delete(id); // gone from the feed
     if (!tiles.length && !feed.loading)
       tiles.push(h("div", { class: "ytpod-empty" }, feed.token ? "No podcasts here yet. Try “Load more”." : "No podcasts found."));
-    s.grid.replaceChildren(...tiles);
+    const current = s.grid.children;
+    if (tiles.length !== current.length || tiles.some((el, i) => current[i] !== el)) s.grid.replaceChildren(...tiles);
 
     s.more.hidden = !feed.token;
     s.more.disabled = feed.loading;
     s.more.textContent = feed.loading ? "Loading…" : "Load more";
+  }
+
+  /** Everything a tile shows that can change; same string → the cached tile is still right. */
+  function tileSig({ v, cls }) {
+    const ov = overrideFor(v);
+    return JSON.stringify([ov?.val, ov?.scope, cls.reason, v.progress, v.title, v.publishedText, v.publishedAt,
+      v.channel, v.channelUrl, v.viewsText, v.durationText, CONFIG.overrideScope]);
   }
 
   function renderTile({ v, cls }) {
@@ -1409,10 +1434,15 @@
     const scopeText = CONFIG.overrideScope === "video" ? "this video" : "this channel";
     const otherText = CONFIG.overrideScope === "video" ? "the whole channel" : "this video only";
     // Upload time: "3 days ago · Nov 18" (approximate: YouTube only gives "3d ago").
+    // The date only for hours/days/weeks; from "1 month ago" on it would look
+    // far more exact than it is, so just the "N months ago" text.
     const streamed = /^streamed/i.test(v.publishedText || "") ? "Streamed " : "";
+    const showDate = ["hour", "day", "week"].includes(v.publishedUnit);
     const when = v.publishedAt != null
-      ? `${streamed}${formatAgo(Date.now() - v.publishedAt)} · ${shortDate(v.publishedAt)}`
+      ? `${streamed}${formatAgo(Date.now() - v.publishedAt)}${showDate ? ` · ${shortDate(v.publishedAt)}` : ""}`
       : v.publishedText;
+    const whenTitle = v.publishedAt == null ? null
+      : showDate ? `Uploaded around ${new Date(v.publishedAt).toLocaleString()}` : v.publishedText || null;
 
     // Watched videos are never hidden; they just get the red progress bar.
     return h("div", { class: "ytpod-tile" },
@@ -1422,7 +1452,7 @@
         progress > 0 && h("div", { class: "ytpod-prog" }, h("div", { style: { width: progress + "%" } }))),
       h("div", { class: "ytpod-meta" },
         h("a", { class: "ytpod-title", href: url, title: v.title, onclick: (e) => onWatchClick(e, v) }, v.title || "(untitled)"),
-        h("div", { class: "ytpod-sub", title: v.publishedAt != null ? `Uploaded around ${new Date(v.publishedAt).toLocaleString()}` : null },
+        h("div", { class: "ytpod-sub", title: whenTitle },
           v.channelUrl ? h("a", { href: v.channelUrl }, v.channel) : v.channel,
           [v.viewsText, when].filter(Boolean).map((t, i) => (i || v.channel ? " • " : "") + t).join("")),
         h("div", { class: "ytpod-actions" },
@@ -1751,11 +1781,11 @@
       `flex:none !important;height:auto;width:${sample.getBoundingClientRect().width}px !important;`;
     copy.style.removeProperty("height"); // let YouTube's stylesheet height (if any) apply
     sample.parentElement.appendChild(copy);
-    let h = copy.getBoundingClientRect().height;
+    let rowH = copy.getBoundingClientRect().height;
     copy.remove();
-    if (!(h >= 24 && h <= 96)) h = 48; // implausible → a typical row height
-    list.dataset.ytpodRowH = String(h);
-    return h;
+    if (!(rowH >= 24 && rowH <= 96)) rowH = 48; // implausible → a typical row height
+    list.dataset.ytpodRowH = String(rowH);
+    return rowH;
   }
 
   function fitMenuHeight(list, items) {
@@ -1771,10 +1801,10 @@
       const ics = getComputedStyle(item);
       const extra = ics.boxSizing === "border-box" ? 0 :
         px(ics.paddingTop) + px(ics.paddingBottom) + px(ics.borderTopWidth) + px(ics.borderBottomWidth);
-      const h = Math.max(0, rowH - extra) + "px";
-      if (item.style.getPropertyValue("height") !== h) {
+      const itemH = Math.max(0, rowH - extra) + "px";
+      if (item.style.getPropertyValue("height") !== itemH) {
         item.style.setProperty("flex", "0 0 auto", "important");
-        item.style.setProperty("height", h, "important");
+        item.style.setProperty("height", itemH, "important");
       }
     }
 
@@ -1798,7 +1828,7 @@
       if (cs.boxSizing !== "border-box") want -= px(cs.paddingTop) + px(cs.paddingBottom) + px(cs.borderTopWidth) + px(cs.borderBottomWidth);
       if (want > 0 && px(el.style.height) - want > 1) changes.push([el, Math.ceil(want) + "px"]);
     }
-    for (const [box, h] of changes) box.style.height = h; // measure everything first, then apply
+    for (const [box, boxH] of changes) box.style.height = boxH; // measure everything first, then apply
   }
 
   // Run often enough to catch the menu before you see it, cheaply:
@@ -1819,11 +1849,22 @@
     })();
   }, true);
 
+  const isElement = (n) => n.nodeType === Node.ELEMENT_NODE;
+  const hasElementChange = (m) => [...m.addedNodes].some(isElement) || [...m.removedNodes].some(isElement);
+
   function watchPlayers() {
     for (const player of document.querySelectorAll(".html5-video-player")) {
       if (player.dataset.ytpodWatched) continue;
       player.dataset.ytpodWatched = "1";
-      new MutationObserver(scheduleMenuFilter).observe(player, { childList: true, subtree: true });
+      // The time display rewrites its text every second; that shows up as
+      // text nodes added/removed. Only element changes can be a menu opening.
+      new MutationObserver((muts) => {
+        if (!muts.some(hasElementChange)) return;
+        scheduleMenuFilter();
+        // The main observer ignores the player, so ask for a tick here while the
+        // controls still lack our PiP button (player just built or rebuilt them).
+        if (CONFIG.pipButton && !player.querySelector(".ytpod-pip-button")) scheduleTick();
+      }).observe(player, { childList: true, subtree: true });
     }
   }
 
@@ -1975,8 +2016,8 @@
     const titles = CONFIG.hideShelves.map((t) => t.toLowerCase());
     for (const sec of document.querySelectorAll("ytd-rich-section-renderer, ytd-shelf-renderer")) {
       if (sec.classList.contains("ytpod-hide")) continue;
-      const h = sec.querySelector("#title, h2, [role='heading']");
-      const text = h && (h.textContent || "").replace(/\s+/g, " ").trim().toLowerCase();
+      const heading = sec.querySelector("#title, h2, [role='heading']");
+      const text = heading && (heading.textContent || "").replace(/\s+/g, " ").trim().toLowerCase();
       if (text && titles.includes(text)) sec.classList.add("ytpod-hide");
     }
   }
@@ -2112,7 +2153,11 @@
     storeQualityPreference();
     applyHighestQuality(); // a video may already be playing
     ensureGuideEntries();
-    new MutationObserver(scheduleTick).observe(document.documentElement, { childList: true, subtree: true });
+    // Skip changes inside a player (its clock ticks every second while playing);
+    // the player has its own observer (watchPlayers).
+    new MutationObserver((muts) => {
+      if (muts.some((m) => !(m.target instanceof Element ? m.target : m.target.parentElement)?.closest(".html5-video-player"))) scheduleTick();
+    }).observe(document.documentElement, { childList: true, subtree: true });
     scheduleTick(); // first pass right away, not only after the next DOM change
     if (location.hash === HASH) {
       waitFor(() => document.querySelector("#page-manager"), 10000).then(() => openPodcasts({ push: false }));

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Reddit Tweaks (Narwhal-style old.reddit)
 // @description  Restyles old.reddit.com into a clean, minimal, app-like layout.
-// @version      1.2.5
+// @version      1.2.6
 // @updateURL    https://raw.githubusercontent.com/thombuilds/Userscripts/main/reddit.user.js
 // @downloadURL  https://raw.githubusercontent.com/thombuilds/Userscripts/main/reddit.user.js
 // @match        https://old.reddit.com/*
@@ -441,7 +441,11 @@
     #header-bottom-left > .pagename       { grid-area: name; min-width: 0; }
     #header-bottom-left > .nw-fav-toggle  { grid-area: star; }
     #header-bottom-left > .nw-user        { grid-area: user; justify-self: end; }
-    #header-bottom-left > .tabmenu        { grid-area: tabs; justify-self: start; max-width: 100%; }
+    #header-bottom-left > .tabmenu        { grid-area: tabs; justify-self: start; max-width: 100%; box-sizing: border-box; }
+    /* More tabs than fit: scroll sideways instead of running off the edge */
+    #header .tabmenu { overflow-x: auto; scrollbar-width: none; }
+    #header .tabmenu::-webkit-scrollbar { display: none; }
+    #header .tabmenu li { flex: none; }
     .pagename.nw-sub-title a { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     #header-bottom-left > * { margin-top: 0 !important; margin-bottom: 0 !important; }
     .pagename { margin: 0 !important; padding: 0 !important; line-height: 1 !important; display: inline-flex; align-items: center; }
@@ -1184,6 +1188,7 @@
     /* Narrow column: the user chip shows just the avatar (name in its tooltip) */
     html.nw-split .nw-user { gap: 4px; }
     html.nw-split .nw-user-name { display: none; }
+    html.nw-split #header .tabmenu li a { padding: 4px 9px !important; }
 
     .nw-pane {
       position: fixed;

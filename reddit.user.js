@@ -1,13 +1,17 @@
 // ==UserScript==
 // @name         Reddit Tweaks (Narwhal-style old.reddit)
 // @description  Restyles old.reddit.com into a clean, minimal, app-like layout.
-// @version      1.2.7
+// @version      1.3.0
 // @updateURL    https://raw.githubusercontent.com/thombuilds/Userscripts/main/reddit.user.js
 // @downloadURL  https://raw.githubusercontent.com/thombuilds/Userscripts/main/reddit.user.js
 // @match        https://old.reddit.com/*
 // @match        https://www.reddit.com/*
 // @match        https://reddit.com/*
 // @run-at       document-start
+// @require      https://cdn.jsdelivr.net/npm/@mozilla/readability@0.5.0/Readability.js
+// @grant        GM.xmlHttpRequest
+// @grant        GM_xmlhttpRequest
+// @connect      *
 // ==/UserScript==
 
 /*
@@ -28,6 +32,7 @@
  *        3j. modern touches: short times/counts, icon buttons, comment dots
  *        3k. watching for new content (new posts, "load more comments")
  *        3l. read posts (dimmed in listings)
+ *        3m. article reader (linked article shown above the comments in the pane)
  *
  * Every class name prefixed with "nw-" is ours (nw = Narwhal-ish), so it never
  * clashes with Reddit's own classes.
@@ -99,6 +104,10 @@
 
     // Remember which posts you've opened and dim them in listings.
     markRead: true,
+
+    // In the split view's pane: when a post links to an article (news etc.),
+    // show a reader version of it between the post and the comments.
+    articleReader: true,
   };
 
   // Read posts (3l): fullname → time opened, kept for 30 days.
@@ -1405,6 +1414,97 @@
     .thing.link.nw-read:not(.nw-selected) { opacity: 0.6; }
     .thing.link.nw-read:not(.nw-selected):hover { opacity: 1; }
     .thing.link.nw-read:not(.nw-selected) a.title { color: var(--nw-visited) !important; }
+
+    /* ---------- 2.16 Article reader (JS 3m) -------------------------- */
+    .nw-article {
+      margin: 12px 0 16px;
+      padding: 16px 20px 14px;
+      background: var(--nw-card);
+      -webkit-backdrop-filter: var(--nw-blur);
+      backdrop-filter: var(--nw-blur);
+      border-radius: var(--nw-radius);
+      box-shadow: var(--nw-shadow);
+      font-family: var(--nw-font);
+      color: var(--nw-text);
+    }
+    .nw-article-head {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px 6px;
+      align-items: center;
+      margin-bottom: 12px;
+      font-size: 12px;
+      color: var(--nw-text-muted);
+    }
+    .nw-article-site { font-weight: 700; color: var(--nw-text); text-transform: uppercase; letter-spacing: 0.04em; }
+    .nw-article-body {
+      font-size: 16px;
+      line-height: 1.65;
+      overflow-wrap: anywhere;
+    }
+    .nw-article-body > :first-child { margin-top: 0; }
+    .nw-article-body p { margin: 0 0 0.9em; }
+    .nw-article-body h2, .nw-article-body h3, .nw-article-body h4, .nw-article-body h5 {
+      margin: 1.2em 0 0.5em;
+      font-size: 18px;
+      line-height: 1.3;
+      font-weight: 700;
+    }
+    .nw-article-body a { color: var(--nw-accent); }
+    .nw-article-body img {
+      display: block;
+      max-width: 100%;
+      height: auto;
+      margin: 4px auto 10px;
+      border-radius: 12px;
+    }
+    .nw-article-body figure { margin: 0 0 1em; }
+    .nw-article-body figcaption { font-size: 12px; color: var(--nw-text-muted); line-height: 1.4; }
+    .nw-article-body blockquote {
+      margin: 0 0 1em;
+      padding-left: 12px;
+      border-left: 3px solid var(--nw-separator);
+      color: var(--nw-text-muted);
+    }
+    .nw-article-body ul, .nw-article-body ol { margin: 0 0 1em; padding-left: 1.4em; }
+    .nw-article-body li { margin-bottom: 0.3em; }
+    .nw-article-body pre {
+      overflow-x: auto;
+      padding: 10px;
+      border-radius: 8px;
+      background: var(--nw-fill);
+      font-size: 13px;
+    }
+    .nw-article-body hr { border: 0; border-top: 1px solid var(--nw-separator); }
+    /* Collapsed: the first part, fading out */
+    .nw-article.nw-collapsible:not(.nw-open) .nw-article-body {
+      max-height: 22em;
+      overflow: hidden;
+      -webkit-mask-image: linear-gradient(black 55%, transparent);
+      mask-image: linear-gradient(black 55%, transparent);
+    }
+    .nw-article-foot {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-top: 10px;
+      font-size: 13px;
+    }
+    .nw-article-note { flex: 1; color: var(--nw-text-muted); font-size: 12px; }
+    .nw-article-more {
+      appearance: none;
+      padding: 5px 14px;
+      border: 0;
+      border-radius: 999px;
+      background: var(--nw-fill);
+      color: var(--nw-accent);
+      font: 600 13px var(--nw-font);
+      cursor: pointer;
+    }
+    .nw-article-more:hover { background: color-mix(in srgb, var(--nw-accent) 14%, transparent); }
+    .nw-article:not(.nw-collapsible) .nw-article-more { display: none; }
+    .nw-article-open { margin-left: auto; color: var(--nw-accent) !important; font-weight: 600; text-decoration: none; }
+    .nw-article-status { color: var(--nw-text-muted); font-size: 14px; }
   `;
 
   // Inject immediately. At document-start <head> may not exist yet,
@@ -2601,6 +2701,221 @@
     });
   }
 
+  /* ---------- 3m. Article reader (pane) ----------------------------- */
+  // A post that links to an article: download the article in the background
+  // (GM.xmlHttpRequest, since the browser won't let a page read other sites),
+  // pull out the readable text with Mozilla's Readability (@require), and
+  // show it between the post and the comments. Paywalled or bot-protected
+  // sites only give what they show logged-out visitors, or nothing.
+
+  // Links we never try: Reddit itself, media hosts, social sites, files.
+  const NOT_ARTICLE_HOST = /(^|\.)(reddit\.com|redd\.it|redditmedia\.com|imgur\.com|youtube\.com|youtu\.be|twitter\.com|x\.com|bsky\.app|instagram\.com|facebook\.com|tiktok\.com|twitch\.tv|streamable\.com|gfycat\.com|giphy\.com|tenor\.com|vimeo\.com|spotify\.com)$/i;
+  const NOT_ARTICLE_FILE = /\.(jpe?g|png|gif|gifv|webp|avif|svg|mp4|webm|mov|mp3|pdf|zip)$/i;
+
+  function articleUrlOf(post) {
+    if (!post || post.classList.contains("self")) return null;
+    let url;
+    try { url = new URL(post.dataset.url || "", location.href); } catch (err) { return null; }
+    if (!/^https?:$/.test(url.protocol)) return null;
+    if (NOT_ARTICLE_HOST.test(url.hostname) || NOT_ARTICLE_FILE.test(url.pathname)) return null;
+    return url.href;
+  }
+
+  function gmGet(url) {
+    return new Promise((resolve, reject) => {
+      const xhr = (typeof GM !== "undefined" && GM && GM.xmlHttpRequest) ||
+        (typeof GM_xmlhttpRequest === "function" && GM_xmlhttpRequest);
+      if (!xhr) { reject(new Error("GM.xmlHttpRequest not available")); return; }
+      xhr({
+        method: "GET",
+        url,
+        timeout: 15000,
+        headers: { Accept: "text/html,application/xhtml+xml" },
+        onload: (r) => (r.status >= 200 && r.status < 400 ? resolve(r) : reject(new Error(`HTTP ${r.status}`))),
+        onerror: () => reject(new Error("network error")),
+        ontimeout: () => reject(new Error("timed out")),
+      });
+    });
+  }
+
+  // Without Readability: the longer paragraphs of <article>/<main>.
+  function simpleExtract(doc) {
+    const root = doc.querySelector("article") || doc.querySelector("main") || doc.body;
+    const box = doc.createElement("div");
+    if (root) {
+      root.querySelectorAll("p").forEach((p) => {
+        if (p.textContent.trim().length > 60) box.appendChild(p.cloneNode(true));
+      });
+    }
+    return { content: box.innerHTML, textContent: box.textContent };
+  }
+
+  // The article's HTML comes from another site, so it's rebuilt element by
+  // element from an allowlist: no scripts, no event handlers, no styles.
+  const ARTICLE_KEEP = new Set(["P", "H2", "H3", "H4", "H5", "UL", "OL", "LI", "BLOCKQUOTE",
+    "A", "EM", "I", "STRONG", "B", "FIGURE", "FIGCAPTION", "BR", "PRE", "CODE", "HR", "SUB", "SUP"]);
+  const ARTICLE_DROP = new Set(["SCRIPT", "STYLE", "IFRAME", "FORM", "BUTTON", "INPUT", "SELECT",
+    "TEXTAREA", "SVG", "VIDEO", "AUDIO", "NOSCRIPT", "OBJECT", "EMBED", "CANVAS", "TEMPLATE",
+    "LINK", "META", "SOURCE", "ASIDE", "NAV"]);
+
+  function safeUrl(raw, base, httpsOnly) {
+    if (!raw) return null;
+    try {
+      const u = new URL(raw.trim(), base);
+      if (httpsOnly ? u.protocol !== "https:" : !/^https?:$/.test(u.protocol)) return null;
+      return u.href;
+    } catch (err) { return null; }
+  }
+
+  // Sites lazy-load images: the real address is often in a data- attribute.
+  function imageUrl(img, base) {
+    const srcset = img.getAttribute("srcset") || img.getAttribute("data-srcset") || "";
+    const candidates = [
+      img.getAttribute("data-src"), img.getAttribute("data-lazy-src"),
+      img.getAttribute("data-original"), img.getAttribute("src"),
+      srcset.split(",").pop().trim().split(/\s+/)[0],
+    ];
+    for (const c of candidates) {
+      if (c && !c.startsWith("data:")) {
+        const u = safeUrl(c, base, true);
+        if (u) return u;
+      }
+    }
+    return null;
+  }
+
+  function makeImage(url) {
+    const img = document.createElement("img");
+    img.src = url;
+    img.alt = "";
+    img.loading = "lazy";
+    img.referrerPolicy = "no-referrer";
+    img.onerror = () => img.remove();
+    return img;
+  }
+
+  function cleanInto(src, dest, base) {
+    for (const node of src.childNodes) {
+      if (node.nodeType === Node.TEXT_NODE) {
+        dest.appendChild(document.createTextNode(node.data));
+        continue;
+      }
+      if (node.nodeType !== Node.ELEMENT_NODE) continue;
+      const tag = node.tagName.toUpperCase();
+      if (ARTICLE_DROP.has(tag)) continue;
+      if (tag === "IMG") {
+        const u = imageUrl(node, base);
+        if (u) dest.appendChild(makeImage(u));
+        continue;
+      }
+      if (!ARTICLE_KEEP.has(tag) && tag !== "H1") { // div, span, section…: keep just the content
+        cleanInto(node, dest, base);
+        continue;
+      }
+      const el = document.createElement(tag === "H1" ? "h2" : tag.toLowerCase());
+      if (tag === "A") {
+        const u = safeUrl(node.getAttribute("href"), base, false);
+        if (u) { el.href = u; el.target = "_blank"; el.rel = "noopener noreferrer"; }
+      }
+      cleanInto(node, el, base);
+      dest.appendChild(el);
+    }
+  }
+
+  function buildArticleCard(articleUrl) {
+    const card = document.createElement("section");
+    card.className = "nw-article";
+    const host = new URL(articleUrl).hostname.replace(/^www\./, "");
+    card.innerHTML = `
+      <div class="nw-article-head"><span class="nw-article-site"></span></div>
+      <div class="nw-article-body"><div class="nw-article-status">Loading article…</div></div>
+      <div class="nw-article-foot">
+        <span class="nw-article-note"></span>
+        <button class="nw-article-more" type="button">Read full article</button>
+        <a class="nw-article-open" target="_blank" rel="noopener noreferrer">Open ↗</a>
+      </div>
+    `;
+    card.querySelector(".nw-article-site").textContent = host;
+    card.querySelector(".nw-article-open").href = articleUrl;
+    const more = card.querySelector(".nw-article-more");
+    more.addEventListener("click", () => {
+      const open = card.classList.toggle("nw-open");
+      more.textContent = open ? "Show less" : "Read full article";
+      if (!open) card.scrollIntoView({ block: "nearest" });
+    });
+    return card;
+  }
+
+  async function setupArticleReader() {
+    if (!CONFIG.articleReader || !IN_PANE) return;
+    if (!document.body.classList.contains("comments-page")) return;
+    const post = document.querySelector("#siteTable .thing.link");
+    const articleUrl = articleUrlOf(post);
+    const comments = document.querySelector(".commentarea");
+    if (!articleUrl || !comments) return;
+
+    const card = buildArticleCard(articleUrl);
+    comments.before(card);
+    const head = card.querySelector(".nw-article-head");
+    const body = card.querySelector(".nw-article-body");
+    const note = card.querySelector(".nw-article-note");
+    const addHead = (text) => {
+      if (!text) return;
+      const sep = document.createElement("span");
+      sep.textContent = "·";
+      const span = document.createElement("span");
+      span.textContent = text;
+      head.append(sep, span);
+    };
+
+    try {
+      const res = await gmGet(articleUrl);
+      const base = res.finalUrl || res.responseURL || articleUrl;
+      const doc = new DOMParser().parseFromString(res.responseText || "", "text/html");
+      // Let relative links/images resolve against the article's address.
+      const baseEl = doc.createElement("base");
+      baseEl.href = base;
+      (doc.head || doc.documentElement).prepend(baseEl);
+
+      const meta = (sel) => {
+        const m = doc.querySelector(sel);
+        return m ? (m.getAttribute("content") || "").trim() : "";
+      };
+      const leadImage = safeUrl(meta('meta[property="og:image"]'), base, true);
+      const siteName = meta('meta[property="og:site_name"]');
+
+      let article = null;
+      if (typeof Readability === "function") {
+        try { article = new Readability(doc, { charThreshold: 300 }).parse(); }
+        catch (err) { console.warn("[Reddit Tweaks] Readability failed:", err); }
+      }
+      if (!article || !article.content) article = simpleExtract(doc);
+
+      const clean = document.createElement("div");
+      cleanInto(new DOMParser().parseFromString(article.content || "", "text/html").body, clean, base);
+      clean.querySelectorAll("p, li, blockquote, figure").forEach((el) => {
+        if (!el.textContent.trim() && !el.querySelector("img")) el.remove();
+      });
+      const text = clean.textContent.trim();
+      if (text.length < 150) throw new Error("no readable text");
+      if (leadImage && !clean.querySelector("img")) clean.prepend(makeImage(leadImage));
+
+      if (siteName) card.querySelector(".nw-article-site").textContent = siteName;
+      addHead(article.byline && article.byline.length < 80 ? article.byline : "");
+      const words = text.split(/\s+/).length;
+      addHead(`${Math.max(1, Math.round(words / 230))} min read`);
+
+      body.textContent = "";
+      body.appendChild(clean);
+      if (text.length > 1400) card.classList.add("nw-collapsible");
+      if (text.length < 700) note.textContent = "Only part of the article is available here (it may be paywalled).";
+    } catch (err) {
+      console.warn("[Reddit Tweaks] article reader:", err);
+      body.innerHTML = '<div class="nw-article-status"></div>';
+      body.firstChild.textContent = "Couldn't load this article here.";
+    }
+  }
+
   /* ---------- 3k. Process the page + watch for new content ----------- */
   function process(root) {
     applyRead(root);
@@ -2650,6 +2965,7 @@
     if (!IN_PANE) setupHeader();
     setupInfiniteScroll();
     if (IN_PANE) document.addEventListener("click", onPaneLinkClick);
+    setupArticleReader();
 
     // New posts (infinite scroll from extensions) and "load more comments"
     // add nodes later. Batch the work once per animation frame.

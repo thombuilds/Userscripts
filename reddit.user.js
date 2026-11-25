@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Reddit Tweaks (Narwhal-style old.reddit)
 // @description  Restyles old.reddit.com into a clean, minimal, app-like layout.
-// @version      1.2.6
+// @version      1.2.7
 // @updateURL    https://raw.githubusercontent.com/thombuilds/Userscripts/main/reddit.user.js
 // @downloadURL  https://raw.githubusercontent.com/thombuilds/Userscripts/main/reddit.user.js
 // @match        https://old.reddit.com/*
@@ -430,13 +430,14 @@
       box-sizing: border-box;
       padding: 8px 12px 0 !important;
       display: grid !important;
-      grid-template-columns: auto minmax(0, max-content) auto 1fr auto;
+      grid-template-columns: auto minmax(0, max-content) auto minmax(0, 1fr) auto;
       grid-template-areas:
         "home name star . user"
         "home tabs tabs tabs tabs";
       align-items: center;
       gap: 8px 10px;
     }
+    #header-bottom-left > * { min-width: 0; }
     #header-bottom-left > .nw-home        { grid-area: home; }
     #header-bottom-left > .pagename       { grid-area: name; min-width: 0; }
     #header-bottom-left > .nw-fav-toggle  { grid-area: star; }
@@ -1184,10 +1185,13 @@
       text-overflow: ellipsis;
       border-bottom: 1px solid var(--nw-separator) !important;
     }
-    html.nw-split #header-bottom-left { max-width: none; }
+    html.nw-split #header-bottom-left { max-width: none; width: 100%; }
     /* Narrow column: the user chip shows just the avatar (name in its tooltip) */
-    html.nw-split .nw-user { gap: 4px; }
-    html.nw-split .nw-user-name { display: none; }
+    html.nw-split .nw-user { gap: 3px; }
+    html.nw-split .nw-user .nw-hbtn { width: 28px; height: 28px; }
+    html.nw-split .nw-user-name,
+    html.nw-split .nw-user-chip::after { display: none; }
+    html.nw-split .nw-user-chip { padding: 0 2px !important; height: 28px; }
     html.nw-split #header .tabmenu li a { padding: 4px 9px !important; }
 
     .nw-pane {

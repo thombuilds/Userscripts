@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Reddit Tweaks (Narwhal-style old.reddit)
 // @description  Restyles old.reddit.com into a clean, minimal, app-like layout.
-// @version      1.3.1
+// @version      1.3.2
 // @updateURL    https://raw.githubusercontent.com/thombuilds/Userscripts/main/reddit.user.js
 // @downloadURL  https://raw.githubusercontent.com/thombuilds/Userscripts/main/reddit.user.js
 // @match        https://old.reddit.com/*
@@ -1479,7 +1479,7 @@
     /* Long articles scroll inside their own box. The bottom fades out
        until you reach the end (JS toggles .nw-at-end). */
     .nw-article.nw-collapsible .nw-article-body {
-      max-height: min(55vh, 34em);
+      max-height: min(75vh, 48em);
       overflow-y: auto;
       overscroll-behavior: contain;   /* the end of the article doesn't scroll the comments */
       padding-right: 8px;

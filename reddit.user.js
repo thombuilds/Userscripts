@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Reddit Tweaks (Narwhal-style old.reddit)
 // @description  Restyles old.reddit.com into a clean, minimal, app-like layout.
-// @version      1.2.4
+// @version      1.2.5
 // @updateURL    https://raw.githubusercontent.com/thombuilds/Userscripts/main/reddit.user.js
 // @downloadURL  https://raw.githubusercontent.com/thombuilds/Userscripts/main/reddit.user.js
 // @match        https://old.reddit.com/*
@@ -418,15 +418,31 @@
       border-bottom: 1px solid var(--nw-separator) !important;
       padding-bottom: 6px;
     }
-    /* Home, subreddit name and tabs on one centred line (tabs wrap if needed) */
+    /* Header layout (built by JS, 3h):
+         [Home] [icon r/name ☆] ........ [mail 🔔 💬 🛡 user ▾]
+         [Home] [hot | new | top …]
+       Home is big and spans both rows. Missing pieces just leave a gap. */
     #header-bottom-left {
-      max-width: var(--nw-feed-width); margin: 0 auto; float: none !important;
-      display: flex !important;
-      flex-wrap: wrap;
+      max-width: var(--nw-feed-width);
+      margin: 0 auto !important;
+      float: none !important;
+      position: static !important;
+      box-sizing: border-box;
+      padding: 8px 12px 0 !important;
+      display: grid !important;
+      grid-template-columns: auto minmax(0, max-content) auto 1fr auto;
+      grid-template-areas:
+        "home name star . user"
+        "home tabs tabs tabs tabs";
       align-items: center;
-      gap: 6px 10px;
-      padding-top: 8px;
+      gap: 8px 10px;
     }
+    #header-bottom-left > .nw-home        { grid-area: home; }
+    #header-bottom-left > .pagename       { grid-area: name; min-width: 0; }
+    #header-bottom-left > .nw-fav-toggle  { grid-area: star; }
+    #header-bottom-left > .nw-user        { grid-area: user; justify-self: end; }
+    #header-bottom-left > .tabmenu        { grid-area: tabs; justify-self: start; max-width: 100%; }
+    .pagename.nw-sub-title a { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     #header-bottom-left > * { margin-top: 0 !important; margin-bottom: 0 !important; }
     .pagename { margin: 0 !important; padding: 0 !important; line-height: 1 !important; display: inline-flex; align-items: center; }
     .pagename a { color: var(--nw-text) !important; font-size: 18px; font-weight: 700; line-height: 1; }
@@ -472,7 +488,8 @@
       outline: 2px solid var(--nw-accent);
       outline-offset: 1px;
     }
-    .nw-home         { --nw-icon: ${ICONS.home}; }
+    .nw-home         { --nw-icon: ${ICONS.home}; width: 46px !important; height: 46px !important; }
+    .nw-home::before { width: 22px; height: 22px; }
     .nw-hbtn-mail    { --nw-icon: ${ICONS.mail}; }
     .nw-hbtn-modmail { --nw-icon: ${ICONS.modmail}; }
     .nw-hbtn-chat    { --nw-icon: ${ICONS.chat}; }
@@ -1164,7 +1181,9 @@
       border-bottom: 1px solid var(--nw-separator) !important;
     }
     html.nw-split #header-bottom-left { max-width: none; }
-    html.nw-split .nw-user { order: -1; flex-basis: 100%; justify-content: flex-end; }
+    /* Narrow column: the user chip shows just the avatar (name in its tooltip) */
+    html.nw-split .nw-user { gap: 4px; }
+    html.nw-split .nw-user-name { display: none; }
 
     .nw-pane {
       position: fixed;
@@ -2270,11 +2289,11 @@
 
     setupUserBar(headerLeft);
 
-    // Reddit leaves empty bits in this row (logo spots, spacers). Even with
-    // no size, each one adds a flex gap, which pushed the name away from Home.
+    // Everything else Reddit keeps in this row (its logo link, spacers) is
+    // already hidden or empty, but would still take a grid cell: drop it.
     const keep = ".nw-home, .pagename, .nw-fav-toggle, .tabmenu, .nw-user";
     [...headerLeft.children].forEach((el) => {
-      if (!el.matches(keep) && !el.textContent.trim()) el.classList.add("nw-gone");
+      if (!el.matches(keep)) el.classList.add("nw-gone");
     });
   }
 

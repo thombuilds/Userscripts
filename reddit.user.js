@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Reddit Tweaks (Narwhal-style old.reddit)
 // @description  Restyles old.reddit.com into a clean, minimal, app-like layout.
-// @version      1.2.2
+// @version      1.2.3
 // @updateURL    https://raw.githubusercontent.com/thombuilds/Userscripts/main/reddit.user.js
 // @downloadURL  https://raw.githubusercontent.com/thombuilds/Userscripts/main/reddit.user.js
 // @match        https://old.reddit.com/*
@@ -23,7 +23,7 @@
  *        3e. split view (posts list left, opened post right)
  *        3f. link handling inside the right pane
  *        3g. favorites sidebar (right edge)
- *        3h. Home link in the header (same on every subreddit)
+ *        3h. header: Home button, r/name with icon, user bar + menu
  *        3i. infinite scroll (loads the next page near the bottom)
  *        3j. modern touches: short times/counts, icon buttons, comment dots
  *        3k. watching for new content (new posts, "load more comments")
@@ -322,6 +322,7 @@
       `stroke-width='2' stroke-linecap='round' stroke-linejoin='round'>${body}</svg>`
     )}")`;
   const BOOKMARK = "<path d='M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z'/>";
+  const STAR = "<path d='M12 2.5l2.9 6 6.6.9-4.8 4.6 1.2 6.5L12 17.4l-5.9 3.1 1.2-6.5-4.8-4.6 6.6-.9z'/>";
   const ICONS = {
     share: svgIcon("<path d='M4 12v7a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7'/><path d='M16 6l-4-4-4 4'/><path d='M12 2v14'/>"),
     save: svgIcon(BOOKMARK),
@@ -333,6 +334,17 @@
     collapse: svgIcon("<path d='M6 15l6-6 6 6'/>"),
     more: svgIcon("<circle cx='5' cy='12' r='1.6'/><circle cx='12' cy='12' r='1.6'/><circle cx='19' cy='12' r='1.6'/>", "black"),
     crosspost: svgIcon("<path d='M17 1l4 4-4 4'/><path d='M3 11V9a4 4 0 0 1 4-4h14'/><path d='M7 23l-4-4 4-4'/><path d='M21 13v2a4 4 0 0 1-4 4H3'/>"),
+    // Header (3h)
+    home: svgIcon("<path d='M3 10.5L12 3l9 7.5'/><path d='M5 9v11h5v-6h4v6h5V9'/>"),
+    star: svgIcon(STAR),
+    starred: svgIcon(STAR, "black"),
+    mail: svgIcon("<rect x='3' y='5' width='18' height='14' rx='2'/><path d='M3 7l9 6 9-6'/>"),
+    modmail: svgIcon("<path d='M12 2l8 3v6c0 5-3.5 9-8 11-4.5-2-8-6-8-11V5z'/>"),
+    chat: svgIcon("<path d='M21 12a8 8 0 0 1-11.6 7.1L3 21l1.9-6.4A8 8 0 1 1 21 12z'/>"),
+    user: svgIcon("<circle cx='12' cy='8' r='4'/><path d='M4 21a8 8 0 0 1 16 0'/>"),
+    prefs: svgIcon("<path d='M4 6h9'/><path d='M19 6h1'/><circle cx='16' cy='6' r='2.5'/><path d='M4 12h2'/><path d='M12 12h8'/><circle cx='9' cy='12' r='2.5'/><path d='M4 18h11'/><circle cx='18' cy='18' r='2.5'/>"),
+    logout: svgIcon("<path d='M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4'/><path d='M16 17l5-5-5-5'/><path d='M21 12H9'/>"),
+    chevron: svgIcon("<path d='M6 9l6 6 6-6'/>"),
   };
 
   /* ======================================================================
@@ -418,23 +430,123 @@
     .pagename { margin: 0 !important; padding: 0 !important; line-height: 1 !important; display: inline-flex; align-items: center; }
     .pagename a { color: var(--nw-text) !important; font-size: 18px; font-weight: 700; line-height: 1; }
 
-    /* Our Home link: same on every page (built by JS, 3h) */
-    a.nw-home {
+    /* Subreddit name in normal case ("r/macOS", not small caps) with its icon */
+    .pagename, .pagename a { font-variant: normal !important; text-transform: none !important; }
+    .pagename.nw-sub-title { gap: 8px; }
+    .pagename.nw-sub-title a::before { content: "r/"; color: var(--nw-text-muted); font-weight: 600; }
+
+    /* Round icon buttons in the header: Home, mail… and the ☆ (JS 3h, 3g) */
+    .nw-hbtn, .nw-fav-toggle {
+      position: relative;
+      display: inline-flex !important;
+      align-items: center;
+      justify-content: center;
+      flex: 0 0 auto;
+      width: 30px;
+      height: 30px;
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0 !important;
+      border: none !important;
+      border-radius: 50% !important;
+      background: var(--nw-fill) !important;
+      color: var(--nw-text-muted) !important;
+      text-decoration: none !important;
+      cursor: pointer;
+    }
+    .nw-hbtn::before, .nw-fav-toggle::before, .nw-user-chip::after {
+      content: "";
+      flex: 0 0 auto;
+      width: 16px;
+      height: 16px;
+      background-color: currentColor;
+      -webkit-mask: var(--nw-icon) center / contain no-repeat;
+      mask: var(--nw-icon) center / contain no-repeat;
+    }
+    .nw-hbtn:hover, .nw-fav-toggle:hover {
+      background: color-mix(in srgb, var(--nw-accent) 14%, transparent) !important;
+      color: var(--nw-accent) !important;
+    }
+    .nw-hbtn:focus-visible, .nw-fav-toggle:focus-visible, .nw-user-chip:focus-visible {
+      outline: 2px solid var(--nw-accent);
+      outline-offset: 1px;
+    }
+    .nw-home         { --nw-icon: ${ICONS.home}; }
+    .nw-hbtn-mail    { --nw-icon: ${ICONS.mail}; }
+    .nw-hbtn-modmail { --nw-icon: ${ICONS.modmail}; }
+    .nw-hbtn-chat    { --nw-icon: ${ICONS.chat}; }
+    .nw-hbtn.nw-unread { color: var(--nw-accent) !important; }
+
+    /* Unread badge: a dot, or the count when Reddit shows one */
+    .nw-badge {
+      position: absolute;
+      top: -1px;
+      right: -1px;
+      min-width: 10px;
+      height: 10px;
+      box-sizing: border-box;
+      border-radius: 999px;
+      border: 2px solid var(--nw-bg);
+      background: var(--nw-accent);
+      color: #fff;
+      font: 700 9px/12px var(--nw-font);
+      text-align: center;
+    }
+    .nw-badge:not(:empty) { height: 16px; min-width: 16px; padding: 0 3px; top: -4px; right: -5px; }
+
+    /* ☆ / ★ right after the subreddit name: bare icon until hovered */
+    .nw-fav-toggle {
+      background: none !important;
+      margin-left: -6px !important;
+      --nw-icon: ${ICONS.star};
+    }
+    .nw-fav-toggle.nw-on { --nw-icon: ${ICONS.starred}; color: var(--nw-accent) !important; }
+
+    /* User bar: [mail] [modmail] [avatar name ▾] at the end of the row.
+       Reddit's own box is hidden once ours is built (logged out it stays). */
+    html.nw-user-ready #header-bottom-right { display: none !important; }
+    .nw-user {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-left: auto !important;
+      min-width: 0;
+    }
+    .nw-user-chip {
+      appearance: none;
       display: inline-flex;
       align-items: center;
-      gap: 5px;
-      margin: 0;
-      padding: 4px 10px;
-      border-radius: 999px;
-      background: var(--nw-card);
-      border: 1px solid var(--nw-glass-edge);
-      box-shadow: var(--nw-shadow);
-      color: var(--nw-accent) !important;
-      font: 600 13px var(--nw-font);
-      text-decoration: none;
-      vertical-align: middle;
+      gap: 7px;
+      min-width: 0;
+      max-width: 220px;
+      height: 30px;
+      box-sizing: border-box;
+      padding: 0 9px 0 3px !important;
+      border: none !important;
+      border-radius: 999px !important;
+      background: var(--nw-fill) !important;
+      color: var(--nw-text) !important;
+      font: 600 13px/1 var(--nw-font) !important;
+      cursor: pointer;
+      --nw-icon: ${ICONS.chevron};
     }
-    a.nw-home:hover { background: var(--nw-fill); }
+    .nw-user-chip::after { width: 12px; height: 12px; opacity: 0.55; }
+    .nw-user-chip:hover, .nw-user-chip[aria-expanded="true"] {
+      background: color-mix(in srgb, var(--nw-accent) 14%, transparent) !important;
+      color: var(--nw-accent) !important;
+    }
+    .nw-user-avatar {
+      flex: none;
+      display: grid;
+      place-items: center;
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      color: #fff;
+      font: 700 12px/1 var(--nw-font);
+    }
+    .nw-user-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
     #header-bottom-right {
       background: var(--nw-card) !important;
       border-radius: 0 0 0 10px !important;
@@ -723,6 +835,17 @@
       text-align: left;
       cursor: pointer;
     }
+    a.nw-menu-item { box-sizing: border-box; text-decoration: none; }
+    .nw-menu-note {
+      padding: 6px 10px 6px;
+      margin-bottom: 4px;
+      border-bottom: 1px solid var(--nw-separator);
+      color: var(--nw-text-muted);
+      font-size: 12px;
+    }
+    .nw-icon-user   { --nw-icon: ${ICONS.user}; }
+    .nw-icon-prefs  { --nw-icon: ${ICONS.prefs}; }
+    .nw-icon-logout { --nw-icon: ${ICONS.logout}; }
     .nw-menu-item::before { color: var(--nw-text-muted); }
     .nw-menu-item:hover, .nw-menu-item:focus-visible {
       background: var(--nw-fill);
@@ -1034,6 +1157,7 @@
       border-bottom: 1px solid var(--nw-separator) !important;
     }
     html.nw-split #header-bottom-left { max-width: none; }
+    html.nw-split .nw-user { order: -1; flex-basis: 100%; justify-content: flex-end; }
 
     .nw-pane {
       position: fixed;
@@ -1434,27 +1558,35 @@
     menuEl = menuFor = null;
   }
 
-  function openMenu(btn, post) {
+  // Items: { kind, label, href } (a link) or { kind, label, onClick },
+  // or { note } for a line of plain text. Empty entries are skipped.
+  function showMenu(btn, items) {
     closeMenu();
     const menu = document.createElement("div");
     menu.className = "nw-menu";
     menu.setAttribute("role", "menu");
-    for (const kind of MENU_ACTIONS) {
-      const orig = findAction(post, kind);
-      if (!orig) continue;
-      const text = orig.textContent.trim();          // "hide" / "unhide"…
-      const item = document.createElement("button");
-      item.type = "button";
-      item.className = `nw-menu-item nw-icon-${kind}`;
+    for (const it of items) {
+      if (!it) continue;
+      if (it.note) {
+        const note = document.createElement("div");
+        note.className = "nw-menu-note";
+        note.textContent = it.note;
+        menu.appendChild(note);
+        continue;
+      }
+      const item = document.createElement(it.href ? "a" : "button");
+      if (it.href) item.href = it.href;
+      else item.type = "button";
+      item.className = `nw-menu-item nw-icon-${it.kind}`;
       item.setAttribute("role", "menuitem");
-      item.textContent = text.charAt(0).toUpperCase() + text.slice(1);
+      item.textContent = it.label;
       item.addEventListener("click", () => {
         closeMenu();
-        orig.click();
+        if (it.onClick) it.onClick();
       });
       menu.appendChild(item);
     }
-    if (!menu.children.length) return;
+    if (!menu.querySelector(".nw-menu-item")) return;
 
     document.body.appendChild(menu);
     menuEl = menu;
@@ -1471,7 +1603,21 @@
     if (top + h > window.innerHeight - 8) top = Math.max(8, r.top - h - 6);
     menu.style.left = `${left}px`;
     menu.style.top = `${top}px`;
-    menu.firstElementChild.focus({ preventScroll: true });
+    menu.querySelector(".nw-menu-item").focus({ preventScroll: true });
+  }
+
+  // The card's "⋯" menu: Share / Hide / Report / Crosspost.
+  function openMenu(btn, post) {
+    showMenu(btn, MENU_ACTIONS.map((kind) => {
+      const orig = findAction(post, kind);
+      if (!orig) return null;
+      const text = orig.textContent.trim();          // "hide" / "unhide"…
+      return {
+        kind,
+        label: text.charAt(0).toUpperCase() + text.slice(1),
+        onClick: () => orig.click(),
+      };
+    }));
   }
 
   // Close on outside click, Esc, scroll or resize.
@@ -2001,8 +2147,9 @@
       if (!toggle) return;
       const on = has(currentName);
       toggle.classList.toggle("nw-on", on);
-      toggle.textContent = on ? "★ Favorite" : "☆ Add to favorites";
       toggle.title = on ? `Remove r/${currentName} from favorites` : `Add r/${currentName} to favorites`;
+      toggle.setAttribute("aria-label", toggle.title);
+      toggle.setAttribute("aria-pressed", String(on));
     }
 
     // Changes made in another tab show up here too.
@@ -2033,7 +2180,8 @@
     catch (err) { return {}; }
   }
   function writeIconCache(cache) {
-    try { localStorage.setItem(ICON_CACHE_KEY, JSON.stringify(cache)); }
+    // Merge with what's stored now: the header and the sidebar both write.
+    try { localStorage.setItem(ICON_CACHE_KEY, JSON.stringify({ ...readIconCache(), ...cache })); }
     catch (err) { /* storage blocked: just refetch next time */ }
   }
 
@@ -2082,20 +2230,111 @@
     writeIconCache(cache);
   }
 
-  /* ---------- 3h. Home link in the header ---------------------------- */
+  /* ---------- 3h. Header: Home, subreddit name, user bar ------------ */
   // Reddit's home link is the logo, but subreddits with a custom banner
-  // replace it with their own image (which we hide). So we add one Home link
-  // that looks the same on every page, then hide Reddit's logo/banner.
-  function setupHomeLink() {
+  // replace it with their own image (which we hide). So we add one Home
+  // button that looks the same on every page, then hide Reddit's logo/banner.
+  // The subreddit name gets "r/" and its icon; the user box becomes
+  // [mail] [modmail] [avatar name ▾] with a menu (Profile, Saved, Preferences,
+  // Log out). Logged out, Reddit's login links stay as they are.
+  function setupHeader() {
     const headerLeft = document.querySelector("#header-bottom-left");
     if (!headerLeft || headerLeft.querySelector(".nw-home")) return;
 
     const home = document.createElement("a");
-    home.className = "nw-home";
+    home.className = "nw-home nw-hbtn";
     home.href = "/";
-    home.textContent = "⌂ Home";
+    home.title = "Home";
+    home.setAttribute("aria-label", "Home");
     headerLeft.prepend(home);
     document.documentElement.classList.add("nw-home-ready");
+
+    const sub = currentSubreddit();
+    const pagename = headerLeft.querySelector(".pagename");
+    if (sub && pagename) {
+      pagename.classList.add("nw-sub-title");
+      const avatar = document.createElement("span");
+      avatar.className = "nw-favs-avatar";
+      avatar.style.background = colorFor(sub);
+      avatar.textContent = sub[0].toUpperCase();
+      pagename.prepend(avatar);
+      loadSubIcons(new Map([[sub.toLowerCase(), avatar]]));
+    }
+
+    setupUserBar(headerLeft);
+  }
+
+  // Reddit's icon links in the user box, by id → our icon.
+  const USER_ICON_IDS = { mail: "mail", modmail: "modmail", chat: "chat" };
+
+  function setupUserBar(headerLeft) {
+    const right = document.querySelector("#header-bottom-right");
+    const userLink = right && right.querySelector(".user a[href*='/user/']");
+    if (!userLink) return;   // logged out
+
+    const name = userLink.textContent.trim();
+    const karma = right.querySelector(".userkarma");
+    const karmaText = karma ? karma.textContent.trim() : "";
+    const prefs = right.querySelector("a[href*='/prefs']");
+    const logout = right.querySelector("form.logout");
+    const count = right.querySelector("a.message-count");   // unread count, if any
+
+    const bar = document.createElement("div");
+    bar.className = "nw-user";
+
+    right.querySelectorAll("a").forEach((a) => {
+      if (a === userLink || a === prefs || a === count || a.closest(".user, form.logout")) return;
+      const kind = USER_ICON_IDS[a.id];
+      if (!kind) {          // something we don't know: move it over as is
+        bar.appendChild(a);
+        return;
+      }
+      const btn = document.createElement("a");
+      btn.className = `nw-hbtn nw-hbtn-${kind}`;
+      btn.href = a.href;
+      btn.title = a.title || a.textContent.trim() || kind;
+      btn.setAttribute("aria-label", btn.title);
+      if (a.classList.contains("havemail") || (kind === "mail" && count)) {
+        btn.classList.add("nw-unread");
+        const badge = document.createElement("span");
+        badge.className = "nw-badge";
+        if (kind === "mail" && count) badge.textContent = count.textContent.trim();
+        btn.appendChild(badge);
+      }
+      bar.appendChild(btn);
+    });
+
+    const chip = document.createElement("button");
+    chip.type = "button";
+    chip.className = "nw-user-chip";
+    chip.title = karmaText ? `u/${name} · ${karmaText} karma` : `u/${name}`;
+    chip.setAttribute("aria-haspopup", "menu");
+    chip.setAttribute("aria-expanded", "false");
+    const avatar = document.createElement("span");
+    avatar.className = "nw-user-avatar";
+    avatar.style.background = colorFor(name);
+    avatar.textContent = name[0].toUpperCase();
+    const label = document.createElement("span");
+    label.className = "nw-user-name";
+    label.textContent = name;
+    chip.append(avatar, label);
+
+    const profile = userLink.href.replace(/\/?$/, "/");
+    chip.addEventListener("click", () => {
+      if (menuFor === chip) { closeMenu(); return; }
+      showMenu(chip, [
+        karmaText && { note: `${karmaText} karma` },
+        { kind: "user", label: "Profile", href: profile },
+        { kind: "save", label: "Saved", href: `${profile}saved/` },
+        prefs && { kind: "prefs", label: "Preferences", href: prefs.href },
+        // Reddit's hidden logout form (it carries the session token).
+        logout && { kind: "logout", label: "Log out", onClick: () => HTMLFormElement.prototype.submit.call(logout) },
+      ]);
+    });
+    bar.appendChild(chip);
+
+    headerLeft.appendChild(bar);
+    document.documentElement.classList.add("nw-user-ready");
   }
 
   /* ---------- 3i. Infinite scroll ----------------------------------- */
@@ -2352,7 +2591,7 @@
 
     setupSplitView();
     setupFavorites();
-    if (!IN_PANE) setupHomeLink();
+    if (!IN_PANE) setupHeader();
     setupInfiniteScroll();
     if (IN_PANE) document.addEventListener("click", onPaneLinkClick);
 

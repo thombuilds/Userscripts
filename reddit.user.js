@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Reddit Tweaks (Narwhal-style old.reddit)
 // @description  Restyles old.reddit.com into a clean, minimal, app-like layout.
-// @version      1.2.3
+// @version      1.2.4
 // @updateURL    https://raw.githubusercontent.com/thombuilds/Userscripts/main/reddit.user.js
 // @downloadURL  https://raw.githubusercontent.com/thombuilds/Userscripts/main/reddit.user.js
 // @match        https://old.reddit.com/*
@@ -340,6 +340,7 @@
     starred: svgIcon(STAR, "black"),
     mail: svgIcon("<rect x='3' y='5' width='18' height='14' rx='2'/><path d='M3 7l9 6 9-6'/>"),
     modmail: svgIcon("<path d='M12 2l8 3v6c0 5-3.5 9-8 11-4.5-2-8-6-8-11V5z'/>"),
+    bell: svgIcon("<path d='M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9'/><path d='M13.7 21a2 2 0 0 1-3.4 0'/>"),
     chat: svgIcon("<path d='M21 12a8 8 0 0 1-11.6 7.1L3 21l1.9-6.4A8 8 0 1 1 21 12z'/>"),
     user: svgIcon("<circle cx='12' cy='8' r='4'/><path d='M4 21a8 8 0 0 1 16 0'/>"),
     prefs: svgIcon("<path d='M4 6h9'/><path d='M19 6h1'/><circle cx='16' cy='6' r='2.5'/><path d='M4 12h2'/><path d='M12 12h8'/><circle cx='9' cy='12' r='2.5'/><path d='M4 18h11'/><circle cx='18' cy='18' r='2.5'/>"),
@@ -475,6 +476,12 @@
     .nw-hbtn-mail    { --nw-icon: ${ICONS.mail}; }
     .nw-hbtn-modmail { --nw-icon: ${ICONS.modmail}; }
     .nw-hbtn-chat    { --nw-icon: ${ICONS.chat}; }
+    .nw-hbtn-bell    { --nw-icon: ${ICONS.bell}; }
+    /* A link we don't recognise: Reddit's own icon, in the same round button */
+    .nw-hbtn-raw::before { display: none; }
+    .nw-hbtn-raw > a { display: block; margin: 0 !important; }
+    /* Empty bits Reddit leaves in the header row (JS 3h) */
+    .nw-gone { display: none !important; }
     .nw-hbtn.nw-unread { color: var(--nw-accent) !important; }
 
     /* Unread badge: a dot, or the count when Reddit shows one */
@@ -2262,10 +2269,26 @@
     }
 
     setupUserBar(headerLeft);
+
+    // Reddit leaves empty bits in this row (logo spots, spacers). Even with
+    // no size, each one adds a flex gap, which pushed the name away from Home.
+    const keep = ".nw-home, .pagename, .nw-fav-toggle, .tabmenu, .nw-user";
+    [...headerLeft.children].forEach((el) => {
+      if (!el.matches(keep) && !el.textContent.trim()) el.classList.add("nw-gone");
+    });
   }
 
-  // Reddit's icon links in the user box, by id → our icon.
-  const USER_ICON_IDS = { mail: "mail", modmail: "modmail", chat: "chat" };
+  // Which of our icons a link in Reddit's user box gets (by id or address),
+  // or null if we don't know it.
+  function userIconKind(a) {
+    const id = (a.id || "").toLowerCase();
+    const href = a.getAttribute("href") || "";
+    if (id === "mail" || /\/message\/(inbox|unread)/.test(href)) return "mail";
+    if (id.includes("modmail") || /mod\.reddit\.com\/mail|\/message\/moderator/.test(href)) return "modmail";
+    if (id.includes("notif") || /notifications/.test(href)) return "bell";
+    if (id.includes("chat") || /\/chat\b|chat\.reddit/.test(href)) return "chat";
+    return null;
+  }
 
   function setupUserBar(headerLeft) {
     const right = document.querySelector("#header-bottom-right");
@@ -2284,9 +2307,12 @@
 
     right.querySelectorAll("a").forEach((a) => {
       if (a === userLink || a === prefs || a === count || a.closest(".user, form.logout")) return;
-      const kind = USER_ICON_IDS[a.id];
-      if (!kind) {          // something we don't know: move it over as is
-        bar.appendChild(a);
+      const kind = userIconKind(a);
+      if (!kind) {          // something we don't know: keep it, in a round button
+        const wrap = document.createElement("span");
+        wrap.className = "nw-hbtn nw-hbtn-raw";
+        wrap.appendChild(a);
+        bar.appendChild(wrap);
         return;
       }
       const btn = document.createElement("a");
@@ -2294,7 +2320,9 @@
       btn.href = a.href;
       btn.title = a.title || a.textContent.trim() || kind;
       btn.setAttribute("aria-label", btn.title);
-      if (a.classList.contains("havemail") || (kind === "mail" && count)) {
+      // Reddit marks unread with e.g. "havemail" (vs "nohavemail").
+      const unread = [...a.classList].some((c) => /^have|unread/.test(c));
+      if (unread || (kind === "mail" && count)) {
         btn.classList.add("nw-unread");
         const badge = document.createElement("span");
         badge.className = "nw-badge";

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Reddit Tweaks (Narwhal-style old.reddit)
 // @description  Restyles old.reddit.com into a clean, minimal, app-like layout.
-// @version      1.3.0
+// @version      1.3.1
 // @updateURL    https://raw.githubusercontent.com/thombuilds/Userscripts/main/reddit.user.js
 // @downloadURL  https://raw.githubusercontent.com/thombuilds/Userscripts/main/reddit.user.js
 // @match        https://old.reddit.com/*
@@ -1476,12 +1476,20 @@
       font-size: 13px;
     }
     .nw-article-body hr { border: 0; border-top: 1px solid var(--nw-separator); }
-    /* Collapsed: the first part, fading out */
-    .nw-article.nw-collapsible:not(.nw-open) .nw-article-body {
-      max-height: 22em;
-      overflow: hidden;
-      -webkit-mask-image: linear-gradient(black 55%, transparent);
-      mask-image: linear-gradient(black 55%, transparent);
+    /* Long articles scroll inside their own box. The bottom fades out
+       until you reach the end (JS toggles .nw-at-end). */
+    .nw-article.nw-collapsible .nw-article-body {
+      max-height: min(55vh, 34em);
+      overflow-y: auto;
+      overscroll-behavior: contain;   /* the end of the article doesn't scroll the comments */
+      padding-right: 8px;
+      margin-right: -8px;
+      -webkit-mask-image: linear-gradient(black calc(100% - 3em), transparent);
+      mask-image: linear-gradient(black calc(100% - 3em), transparent);
+    }
+    .nw-article.nw-collapsible.nw-at-end .nw-article-body {
+      -webkit-mask-image: none;
+      mask-image: none;
     }
     .nw-article-foot {
       display: flex;
@@ -1491,18 +1499,6 @@
       font-size: 13px;
     }
     .nw-article-note { flex: 1; color: var(--nw-text-muted); font-size: 12px; }
-    .nw-article-more {
-      appearance: none;
-      padding: 5px 14px;
-      border: 0;
-      border-radius: 999px;
-      background: var(--nw-fill);
-      color: var(--nw-accent);
-      font: 600 13px var(--nw-font);
-      cursor: pointer;
-    }
-    .nw-article-more:hover { background: color-mix(in srgb, var(--nw-accent) 14%, transparent); }
-    .nw-article:not(.nw-collapsible) .nw-article-more { display: none; }
     .nw-article-open { margin-left: auto; color: var(--nw-accent) !important; font-weight: 600; text-decoration: none; }
     .nw-article-status { color: var(--nw-text-muted); font-size: 14px; }
   `;
@@ -2831,18 +2827,15 @@
       <div class="nw-article-body"><div class="nw-article-status">Loading article…</div></div>
       <div class="nw-article-foot">
         <span class="nw-article-note"></span>
-        <button class="nw-article-more" type="button">Read full article</button>
         <a class="nw-article-open" target="_blank" rel="noopener noreferrer">Open ↗</a>
       </div>
     `;
     card.querySelector(".nw-article-site").textContent = host;
     card.querySelector(".nw-article-open").href = articleUrl;
-    const more = card.querySelector(".nw-article-more");
-    more.addEventListener("click", () => {
-      const open = card.classList.toggle("nw-open");
-      more.textContent = open ? "Show less" : "Read full article";
-      if (!open) card.scrollIntoView({ block: "nearest" });
-    });
+    const body = card.querySelector(".nw-article-body");
+    body.addEventListener("scroll", () => {
+      card.classList.toggle("nw-at-end", body.scrollTop + body.clientHeight >= body.scrollHeight - 4);
+    }, { passive: true });
     return card;
   }
 

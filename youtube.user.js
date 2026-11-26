@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube Tweaks (Podcasts page, player, compact Home)
-// @description  Separate "Podcasts" page in the sidebar; trimmed player (no subtitles/AirPlay, highest quality, minimal settings menu, Picture-in-Picture button, "s" sets a 1-hour sleep timer); compact Home grid.
-// @version      1.9.7
+// @description  Separate "Podcasts" page in the sidebar; trimmed player (no subtitles/AirPlay, highest quality, minimal settings menu, Picture-in-Picture button, "s" toggles a 1-hour sleep timer); compact Home grid.
+// @version      1.9.8
 // @updateURL    https://raw.githubusercontent.com/thombuilds/Userscripts/main/youtube.user.js
 // @downloadURL  https://raw.githubusercontent.com/thombuilds/Userscripts/main/youtube.user.js
 // @match        https://www.youtube.com/*
@@ -121,7 +121,7 @@
     // plus the "p" key as a shortcut (ignored while typing in a text field).
     pipButton: true,
     pipKey: "p",
-    // Press this key on a video to set YouTube's sleep timer (via the gear menu).
+    // Press this key on a video to set YouTube's sleep timer (via the gear menu); press again to turn it off.
     // Set sleepKey: "" to turn it off. sleepMinutes must be one of the menu's options.
     sleepKey: "s",
     sleepMinutes: 60,
@@ -148,7 +148,7 @@
     debug: false,
   };
 
-  const VERSION = "1.9.7"; // keep in sync with @version; shown on the Podcasts page and in the console
+  const VERSION = "1.9.8"; // keep in sync with @version; shown on the Podcasts page and in the console
   const HASH = "#" + CONFIG.hash;
   const log = (...a) => CONFIG.debug && console.log("[YT Podcasts]", ...a);
 
@@ -1480,8 +1480,7 @@
     const el = h("div", { id: "ytpod-toast" },
       h("span", {}, message),
       undo && h("button", { onclick: () => { el.remove(); undo(); } }, "Undo"));
-    // In fullscreen only the fullscreen element is visible.
-    (document.fullscreenElement || document.webkitFullscreenElement || document.body).appendChild(el);
+    document.body.appendChild(el);
     toastTimer = setTimeout(() => el.remove(), 5000);
   }
 
@@ -1636,6 +1635,13 @@
       .ytpod-pip-button svg { width: 24px; height: 24px; flex: none; }
       /* Sleep-timer hotkey clicks through the gear menu; keep that invisible. */
       html.ytpod-sleep-auto .ytp-settings-menu, html.ytpod-sleep-auto .ytp-popup { opacity: 0 !important; }
+      .ytpod-player-toast {
+        position: absolute; top: 10%; left: 50%; transform: translateX(-50%); z-index: 80;
+        padding: 10px 20px; border-radius: 20px; pointer-events: none; white-space: nowrap;
+        background: rgba(0,0,0,.7); color: #fff; font: 500 18px/24px Roboto, Arial, sans-serif;
+        transition: opacity .4s;
+      }
+      .ytpod-player-toast.ytpod-fade { opacity: 0; }
     `;
     if (CONFIG.hideSubtitles)
       css += `
@@ -1990,26 +1996,43 @@
   const visibleMenuItems = (root) => [...root.querySelectorAll(MENU_ITEM_SEL)].filter(visible);
 
   let sleepBusy = false;
-  async function setSleepTimer() {
+  let sleepUntil = 0; // when the timer we set runs out (backup if the menu doesn't show the current value)
+
+  /** A short message at the top centre of the video, like YouTube's own volume/speed bubble. */
+  function playerToast(player, message) {
+    player.querySelector(".ytpod-player-toast")?.remove();
+    const el = h("div", { class: "ytpod-player-toast", role: "status" }, message);
+    player.appendChild(el);
+    setTimeout(() => el.classList.add("ytpod-fade"), 1800);
+    setTimeout(() => el.remove(), 2200);
+  }
+
+  /** Hotkey: sleep timer off → set it to sleepMinutes; on → turn it off. */
+  async function toggleSleepTimer() {
     if (sleepBusy) return;
     const player = document.getElementById("movie_player") || document.querySelector(".html5-video-player");
     const gear = player?.querySelector(".ytp-settings-button");
-    if (!gear) return toast("Sleep timer: no player here");
+    if (!gear) return;
     const mins = CONFIG.sleepMinutes;
-    const wanted = new RegExp(`^(${mins}\\s*min|${mins % 60 === 0 ? `${mins / 60}\\s*(hour|hr)` : "$^"})`, "i");
+    const wantOn = new RegExp(`^(${mins}\\s*min|${mins % 60 === 0 ? `${mins / 60}\\s*(hour|hr)` : "$^"})`, "i");
+    const wantOff = /^off\b/i;
     sleepBusy = true;
     document.documentElement.classList.add("ytpod-sleep-auto");
-    let ok = false;
+    let result = null; // "on" | "off" | null (failed)
     try {
       if (gear.getAttribute("aria-expanded") === "true") gear.click(); // start from a closed menu
       gear.click();
       const entry = await waitForEl(() => visibleMenuItems(player).find((i) => menuLabel(i).startsWith("sleep timer")));
       if (entry) {
+        // The entry shows the current value ("Off", "60 minutes"…). If it doesn't, use what we remember.
+        const current = (entry.textContent || "").replace(/\s+/g, " ").trim().replace(/^sleep timer/i, "").trim();
+        const isOn = current ? !wantOff.test(current) : Date.now() < sleepUntil;
+        const target = isOn ? wantOff : wantOn;
         entry.click();
-        const option = await waitForEl(() => visibleMenuItems(player).find((i) => wanted.test(menuLabel(i))));
+        const option = await waitForEl(() => visibleMenuItems(player).find((i) => target.test(menuLabel(i))));
         if (option) {
           option.click();
-          ok = true;
+          result = isOn ? "off" : "on";
         }
       }
     } finally {
@@ -2018,8 +2041,9 @@
       document.documentElement.classList.remove("ytpod-sleep-auto");
       sleepBusy = false;
     }
+    if (result) sleepUntil = result === "on" ? Date.now() + mins * 60000 : 0;
     const label = mins % 60 === 0 ? `${mins / 60} hour${mins > 60 ? "s" : ""}` : `${mins} minutes`;
-    toast(ok ? `Sleep timer: ${label}` : "Couldn't set the sleep timer (menu not found)");
+    playerToast(player, result === "on" ? `Sleep timer: ${label}` : result === "off" ? "Sleep timer off" : "Couldn't change the sleep timer");
   }
 
   document.addEventListener("keydown", (e) => {
@@ -2030,7 +2054,7 @@
     if (!location.pathname.startsWith("/watch") || state.open) return;
     e.preventDefault();
     e.stopPropagation();
-    setSleepTimer();
+    toggleSleepTimer();
   }, true);
 
   /* ======================================================================

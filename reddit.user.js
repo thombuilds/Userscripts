@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Reddit Tweaks (Narwhal-style old.reddit)
 // @description  Restyles old.reddit.com into a clean, minimal, app-like layout.
-// @version      1.4.0
+// @version      1.4.1
 // @updateURL    https://raw.githubusercontent.com/thombuilds/Userscripts/main/reddit.user.js
 // @downloadURL  https://raw.githubusercontent.com/thombuilds/Userscripts/main/reddit.user.js
 // @match        https://old.reddit.com/*
@@ -108,19 +108,6 @@
     // In the split view's pane: when a post links to an article (news etc.),
     // show a reader version of it between the post and the comments.
     articleReader: true,
-
-    // Speed (1.4):
-    // Start loading a post in the pane while you hover it (after this many
-    // ms), so it's usually ready by the time you click. 0 = off.
-    // Hovers while the list is scrolling don't count.
-    preloadOnHoverMs: 250,
-    // At most this many hover preloads per minute (keeps Reddit from
-    // rate-limiting you). Pressing a post always preloads.
-    preloadPerMinute: 12,
-    // Comments loaded with a post in the pane. Fewer = much faster page.
-    // Overrides your Reddit "comments to show" setting (default 200);
-    // "load more comments" still works. null = use your Reddit setting.
-    paneCommentLimit: 100,
   };
 
   // Read posts (3l): fullname → time opened, kept for 30 days.
@@ -378,19 +365,9 @@
     ${THEME_VARS}
 
     /* ---------- 2.1 Base page ---------------------------------------- */
-    /* The gradient sits on its own fixed layer: a "background-attachment:
-       fixed" background makes the browser repaint the page on every scroll. */
     html {
-      background: var(--nw-bg) !important;
+      background: var(--nw-bg-gradient) fixed !important;
       min-height: 100%;
-    }
-    html::before {
-      content: "";
-      position: fixed;
-      inset: 0;
-      z-index: -1;
-      pointer-events: none;
-      background: var(--nw-bg-gradient);
     }
     html, body {
       color: var(--nw-text) !important;
@@ -701,8 +678,8 @@
       border: none !important;                 /* shadow only */
       border-radius: var(--nw-radius) !important;
       box-shadow: var(--nw-shadow);
-      /* No backdrop blur here: behind cards is only the smooth gradient, so
-         blur looked the same but cost a lot with hundreds of cards. */
+      -webkit-backdrop-filter: var(--nw-blur);
+      backdrop-filter: var(--nw-blur);
       padding: 12px 14px 10px !important;      /* a little tighter at the bottom */
       margin: 0 0 10px 0 !important;           /* gap between cards */
       position: relative;
@@ -1092,9 +1069,6 @@
       border-top: 1px solid var(--nw-separator);
       padding-top: 10px !important;
       margin-top: 8px !important;
-      /* Threads off screen aren't drawn until you scroll near them. */
-      content-visibility: auto;
-      contain-intrinsic-size: auto 240px;
     }
 
     /* Remove Reddit's dotted reply lines; ours replace them */
@@ -1247,7 +1221,9 @@
       gap: 12px;
       height: 40px;
       padding: 0 14px;
-      background: var(--nw-card);   /* no blur: nothing scrolls behind the bar */
+      background: var(--nw-card);
+      -webkit-backdrop-filter: var(--nw-blur);
+      backdrop-filter: var(--nw-blur);
       border-bottom: 1px solid var(--nw-separator);
       font: 600 13px var(--nw-font);
       color: var(--nw-text);
@@ -1259,14 +1235,6 @@
       font: inherit; padding: 0;
     }
     .nw-pane iframe { flex: 1; width: 100%; border: 0; background: var(--nw-bg); }
-    /* Second, hidden frame that loads the post you're hovering (3e) */
-    .nw-pane iframe.nw-preload {
-      position: absolute;
-      top: 40px; left: 0; right: 0; bottom: 0;
-      height: calc(100% - 40px);
-      visibility: hidden;
-      pointer-events: none;
-    }
     .nw-pane-empty {
       margin: auto;
       color: var(--nw-text-faint);
@@ -1275,7 +1243,7 @@
       padding: 20px;
     }
     .nw-pane.nw-has-post .nw-pane-empty { display: none; }
-    .nw-pane:not(.nw-has-post) iframe:not(.nw-preload),
+    .nw-pane:not(.nw-has-post) iframe,
     .nw-pane:not(.nw-has-post) .nw-pane-bar { display: none; }
 
     /* The post currently open on the right */
@@ -1452,6 +1420,8 @@
       margin: 12px 0 16px;
       padding: 16px 20px 14px;
       background: var(--nw-card);
+      -webkit-backdrop-filter: var(--nw-blur);
+      backdrop-filter: var(--nw-blur);
       border-radius: var(--nw-radius);
       box-shadow: var(--nw-shadow);
       font-family: var(--nw-font);
@@ -1553,13 +1523,8 @@
   const SUB_CSS = 'link[title="applied_subreddit_stylesheet"], style[title="applied_subreddit_stylesheet"]';
   let headWatcher = null;
   if (CONFIG.disableSubredditStyles) {
-    // Only looks at the nodes just added (not the whole page each time).
-    headWatcher = new MutationObserver((records) => {
-      for (const r of records) {
-        for (const n of r.addedNodes) {
-          if (n.nodeType === 1 && (n.tagName === "LINK" || n.tagName === "STYLE") && n.matches(SUB_CSS)) n.remove();
-        }
-      }
+    headWatcher = new MutationObserver(() => {
+      document.querySelectorAll(SUB_CSS).forEach((el) => el.remove());
     });
     headWatcher.observe(document.documentElement, { childList: true, subtree: true });
   }
@@ -1869,8 +1834,7 @@
   // The pane is an <iframe>: a full Reddit page, so voting and replying work.
 
   let pane = null;      // the right-hand pane element
-  let paneFrame = null; // the <iframe> inside it (the visible one)
-  let preFrame = null;  // hidden second <iframe>: preloads the hovered post
+  let paneFrame = null; // the <iframe> inside it
   let selectedPost = null;
 
   function isListingPage() {
@@ -1884,16 +1848,8 @@
     const raw = post.dataset.permalink ||
       (post.querySelector("a.comments") || {}).href;
     if (!raw) return null;
-    return paneUrl(raw);
-  }
-
-  // Same host as this page, plus the comment limit (smaller = faster page).
-  function paneUrl(raw) {
     const url = new URL(raw, location.origin);
     url.host = location.host;
-    if (CONFIG.paneCommentLimit && !url.searchParams.has("limit")) {
-      url.searchParams.set("limit", String(CONFIG.paneCommentLimit));
-    }
     return url.href;
   }
 
@@ -1913,92 +1869,7 @@
     document.body.appendChild(pane);
     paneFrame = pane.querySelector("iframe");
     pane.querySelector(".nw-pane-close").addEventListener("click", closePane);
-
-    preFrame = document.createElement("iframe");
-    preFrame.className = "nw-preload";
-    preFrame.tabIndex = -1;
-    preFrame.setAttribute("aria-hidden", "true");
-    paneFrame.after(preFrame);
-
-    // The two frames swap roles, so only react to whichever is visible.
-    // Each frame also remembers which URL it finished loading, so a swap
-    // knows whether the page in it is the right one and already done.
-    const onLoad = (e) => {
-      const frame = e.currentTarget;
-      frame.dataset.loaded = frame.dataset.url || "";
-      if (frame === paneFrame) onPaneLoad();
-    };
-    paneFrame.addEventListener("load", onLoad);
-    preFrame.addEventListener("load", onLoad);
-  }
-
-  // Point a frame at a page *without* adding a Back-button entry (setting
-  // an iframe's src adds one to the main window's history every time).
-  function loadInto(frame, url) {
-    frame.dataset.url = url === "about:blank" ? "" : url;
-    try {
-      frame.contentWindow.location.replace(url);
-    } catch (err) {
-      frame.src = url;
-    }
-  }
-
-  // Start loading a post in the hidden frame (hover / press).
-  // Returns true if a new load was started.
-  function preloadPost(url) {
-    if (!preFrame || !url) return false;
-    if (paneFrame.dataset.url === url || preFrame.dataset.url === url) return false;
-    loadInto(preFrame, url);
-    return true;
-  }
-
-  // Hovered post → preload after a short pause; pressing the mouse → right away.
-  // Hover only counts when the mouse itself moved onto the post (not when the
-  // list scrolled under it), and is capped per minute, so scrolling past a
-  // list doesn't load dozens of threads.
-  function setupPreload() {
-    const postAt = (el) => {
-      if (!document.documentElement.classList.contains("nw-split")) return null;
-      return el && el.closest ? el.closest("#siteTable .thing.link") : null;
-    };
-
-    if (CONFIG.preloadOnHoverMs) {
-      let hovered = null;
-      let timer = null;
-      let lastScroll = 0;
-      const recent = []; // times of recent hover preloads
-
-      const hoverPreload = (post) => {
-        const now = Date.now();
-        while (recent.length && now - recent[0] > 60000) recent.shift();
-        if (CONFIG.preloadPerMinute && recent.length >= CONFIG.preloadPerMinute) return;
-        if (preloadPost(permalinkOf(post))) recent.push(now);
-      };
-
-      window.addEventListener("scroll", () => {
-        lastScroll = Date.now();
-        clearTimeout(timer);
-        hovered = null; // the next real mouse move starts over
-      }, { passive: true, capture: true });
-
-      document.addEventListener("pointermove", (e) => {
-        if (e.pointerType !== "mouse") return;            // touch: press only
-        if (Date.now() - lastScroll < 300) return;        // still scrolling
-        const post = postAt(e.target);
-        if (post === hovered) return;
-        clearTimeout(timer);
-        hovered = post;
-        if (post) timer = setTimeout(() => hoverPreload(post), CONFIG.preloadOnHoverMs);
-      }, { passive: true });
-    }
-
-    // Pressing a post: start right away (not counted against the hover cap).
-    document.addEventListener("pointerdown", (e) => {
-      if (e.button !== 0) return;
-      const post = postAt(e.target);
-      if (!post) return;
-      preloadPost(permalinkOf(post));
-    }, true);
+    paneFrame.addEventListener("load", onPaneLoad);
   }
 
   // `post` may be null (a post that isn't in the list, e.g. an old one
@@ -2015,39 +1886,14 @@
     pane.querySelector(".nw-pane-title").textContent = title ? title.textContent : "";
     pane.querySelector(".nw-pane-open").href = url;
     pane.classList.add("nw-has-post");
-
-    // Already preloaded (hover): just swap the hidden frame in.
-    if (preFrame && preFrame.dataset.url === url && paneFrame.dataset.url !== url) {
-      const old = paneFrame;
-      paneFrame = preFrame;
-      preFrame = old;
-      paneFrame.classList.remove("nw-preload");
-      paneFrame.removeAttribute("aria-hidden");
-      paneFrame.tabIndex = 0;
-      preFrame.classList.add("nw-preload");
-      preFrame.setAttribute("aria-hidden", "true");
-      preFrame.tabIndex = -1;
-      loadInto(preFrame, "about:blank");   // stop anything (e.g. video) in the old one
-      // Finished loading while hidden: its load event is gone, so run it now.
-      // (If it's still loading, its load event will do it.)
-      if (paneFrame.dataset.loaded === url) onPaneLoad();
-      return;
-    }
-    if (paneFrame.dataset.url !== url) loadInto(paneFrame, url); // may already be loading
+    if (paneFrame.src !== url) paneFrame.src = url; // may already be loading
   }
 
   function closePane() {
     if (selectedPost) selectedPost.classList.remove("nw-selected");
     selectedPost = null;
     pane.classList.remove("nw-has-post");
-    loadInto(paneFrame, "about:blank");
-    if (preFrame.dataset.url) loadInto(preFrame, "about:blank"); // stop a running preload
-  }
-
-  // "…/comments/abc123/…" → "abc123" (lowercase), or null.
-  function threadIdOf(href) {
-    const m = /\/comments\/([a-z0-9]+)/i.exec(href || "");
-    return m ? m[1].toLowerCase() : null;
+    paneFrame.src = "about:blank";
   }
 
   // Runs each time the pane finishes loading a page.
@@ -2074,12 +1920,6 @@
     pane.querySelector(".nw-pane-title").textContent = t ? t.textContent : doc.title;
     pane.querySelector(".nw-pane-open").href = doc.location.href;
 
-    // Moved to another thread inside the pane: remember that, so clicking
-    // the original post in the list loads it again.
-    if (threadIdOf(doc.location.href) !== threadIdOf(paneFrame.dataset.url)) {
-      paneFrame.dataset.url = paneFrame.dataset.loaded = doc.location.href;
-    }
-
     // Highlight the list post matching the loaded thread (none if it isn't in the list).
     const m = doc.location.pathname.match(/\/comments\/([a-z0-9]+)/i);
     const match = m &&
@@ -2089,8 +1929,6 @@
       selectedPost = match || null;
       if (selectedPost) selectedPost.classList.add("nw-selected");
     }
-    // Marked read here (not by the page itself), so hover preloads don't count.
-    if (m) markRead(`t3_${m[1].toLowerCase()}`);
 
     // Backup in case the Userscripts app didn't run this script inside the
     // frame: at least copy our styles in. (Collapse/depth lines need the script.)
@@ -2139,7 +1977,6 @@
     }
 
     buildPane();
-    setupPreload();
     document.addEventListener("click", onListClick);
     document.addEventListener("keydown", (e) => {
       if (e.key === "Escape" && pane.classList.contains("nw-has-post")) closePane();
@@ -2156,7 +1993,9 @@
 
   // Pane URL for a pending post (same host, or the browser won't embed it).
   function paneUrlOf(pending) {
-    return paneUrl(pending.url);
+    const url = new URL(pending.url, location.origin);
+    url.host = location.host;
+    return url.href;
   }
 
   // A post we were redirected away from (section 1): open it / mark it in
@@ -2677,8 +2516,6 @@
       const res = await fetch(next.href, { credentials: "include" });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const doc = new DOMParser().parseFromString(await res.text(), "text/html");
-      // Thumbnails further down only download when you get near them.
-      doc.querySelectorAll("#siteTable img").forEach((img) => { img.loading = "lazy"; });
       const newTable = doc.querySelector("#siteTable");
       if (!newTable) throw new Error("no #siteTable in next page");
 
@@ -2722,15 +2559,14 @@
     const nav = table && table.querySelector(":scope > .nav-buttons");
     if (!nav || !nav.querySelector(".next-button a")) return;
 
-    // Fire when "next" is within ~3 screens of being visible, so the next
-    // page is usually in before you get there.
+    // Fire when "next" is within ~1.5 screens of being visible.
     const observer = new IntersectionObserver((items) => {
       items.forEach((item) => {
         if (!item.isIntersecting) return;
         observer.unobserve(item.target);
         loadNextPage(table, observer);
       });
-    }, { rootMargin: "0px 0px 300% 0px" });
+    }, { rootMargin: "0px 0px 150% 0px" });
     observer.observe(nav);
   }
 
@@ -2829,7 +2665,7 @@
   // Tag read posts in listings (not on a post's own page).
   function applyRead(root) {
     if (!CONFIG.markRead || document.body.classList.contains("comments-page")) return;
-    each(root, ".thing.link[data-fullname]", (post) => {
+    root.querySelectorAll(".thing.link[data-fullname]").forEach((post) => {
       const read = Object.prototype.hasOwnProperty.call(readPosts, post.dataset.fullname);
       if (read !== post.classList.contains("nw-read")) post.classList.toggle("nw-read", read);
     });
@@ -2839,10 +2675,9 @@
     if (!CONFIG.markRead) return;
     loadRead();
 
-    // This page is a post opened as a full page: it's read now.
-    // (In the pane, the main window marks it once it's actually shown.)
+    // This page is a post (full page or in the pane): it's read now.
     const m = location.pathname.match(/\/comments\/([a-z0-9]+)/i);
-    if (m && !IN_PANE) markRead(`t3_${m[1].toLowerCase()}`);
+    if (m) markRead(`t3_${m[1].toLowerCase()}`);
 
     // Clicking (or middle-clicking) a post's title, thumbnail or comments link.
     const onOpen = (e) => {
@@ -2854,7 +2689,7 @@
     document.addEventListener("click", onOpen, true);
     document.addEventListener("auxclick", onOpen, true);
 
-    // Posts opened in other tabs (the pane is marked by this window, 3e).
+    // Posts opened in other tabs, or in the pane (its own page writes too).
     window.addEventListener("storage", (e) => {
       if (e.key !== READ_KEY) return;
       loadRead();
@@ -3004,22 +2839,6 @@
     return card;
   }
 
-  // Resolves once this pane page is the visible frame (right away if it
-  // already is). The main window marks the hidden one with .nw-preload.
-  function whenPaneShown() {
-    let frame = null;
-    try { frame = window.frameElement; } catch (err) { /* not reachable */ }
-    if (!frame || !frame.classList.contains("nw-preload")) return Promise.resolve();
-    return new Promise((resolve) => {
-      const watch = new MutationObserver(() => {
-        if (frame.classList.contains("nw-preload")) return;
-        watch.disconnect();
-        resolve();
-      });
-      watch.observe(frame, { attributes: true, attributeFilter: ["class"] });
-    });
-  }
-
   async function setupArticleReader() {
     if (!CONFIG.articleReader || !IN_PANE) return;
     if (!document.body.classList.contains("comments-page")) return;
@@ -3027,10 +2846,6 @@
     const articleUrl = articleUrlOf(post);
     const comments = document.querySelector(".commentarea");
     if (!articleUrl || !comments) return;
-
-    // Loaded in the hidden frame (hover preload): don't contact the
-    // article's site until the post is actually opened.
-    await whenPaneShown();
 
     const card = buildArticleCard(articleUrl);
     comments.before(card);
@@ -3095,18 +2910,12 @@
   }
 
   /* ---------- 3k. Process the page + watch for new content ----------- */
-  // Run fn on root itself (if it matches) and everything inside it.
-  function each(root, sel, fn) {
-    if (root.matches && root.matches(sel)) fn(root);
-    root.querySelectorAll(sel).forEach(fn);
-  }
-
   function process(root) {
     applyRead(root);
-    each(root, ".thing.link", buildMeta);
-    each(root, ".thing.link .buttons a", iconize);
-    each(root, ".thing.comment", setDepth);
-    each(root, ".thing.comment > .entry .tagline a.author", addDot);
+    root.querySelectorAll(".thing.link").forEach(buildMeta);
+    root.querySelectorAll(".thing.link .buttons a").forEach(iconize);
+    root.querySelectorAll(".thing.comment").forEach(setDepth);
+    root.querySelectorAll(".thing.comment > .entry .tagline a.author").forEach(addDot);
   }
 
   // www.reddit.com can serve either the old design (if "use old Reddit" is on
@@ -3152,30 +2961,14 @@
     setupArticleReader();
 
     // New posts (infinite scroll from extensions) and "load more comments"
-    // add nodes later. Once per animation frame, process just the nodes that
-    // were added (not the whole page, which gets slow after infinite scroll).
-    const added = new Set();
+    // add nodes later. Batch the work once per animation frame.
     let queued = false;
-    new MutationObserver((records) => {
-      for (const r of records) {
-        for (const n of r.addedNodes) if (n.nodeType === 1) added.add(n);
-      }
-      if (queued || !added.size) return;
+    new MutationObserver(() => {
+      if (queued) return;
       queued = true;
       requestAnimationFrame(() => {
         queued = false;
-        const nodes = [...added];
-        nodes.forEach((n) => {
-          if (!n.isConnected) return;
-          // Inside another added node: that one covers it.
-          for (let p = n.parentElement; p; p = p.parentElement) if (added.has(p)) return;
-          process(n);
-          // Something added inside a post whose meta line couldn't be built
-          // yet (no tagline then): try again.
-          const post = n.closest(".thing.link:not(.nw-meta-ready)");
-          if (post) buildMeta(post);
-        });
-        added.clear();
+        process(document);
       });
     }).observe(document.body, { childList: true, subtree: true });
   }

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube Tweaks (Podcasts page, player, compact Home)
-// @description  Separate "Podcasts" page in the sidebar; trimmed player (no subtitles/AirPlay, highest quality, minimal settings menu, Picture-in-Picture button, "s" toggles a 1-hour sleep timer); SponsorBlock skipping ("u" undoes); compact Home grid.
-// @version      1.10.1
+// @description  Separate "Podcasts" page in the sidebar; trimmed player (no subtitles/AirPlay, highest quality up to 1440p, minimal settings menu, Picture-in-Picture button, "s" toggles a 1-hour sleep timer); SponsorBlock skipping ("u" undoes); compact Home grid.
+// @version      1.10.2
 // @updateURL    https://raw.githubusercontent.com/thombuilds/Userscripts/main/youtube.user.js
 // @downloadURL  https://raw.githubusercontent.com/thombuilds/Userscripts/main/youtube.user.js
 // @match        https://www.youtube.com/*
@@ -115,6 +115,9 @@
     hideSubtitles: true, // CC button + the captions themselves
     hideAirPlay: true,
     forceHighestQuality: true,
+    // Cap for that: the highest quality at or below this many lines (1440 = 1440p).
+    // 0 = no cap (as high as the video goes).
+    maxQuality: 1440,
     // Settings (gear) menu: only items whose label starts with one of these stay.
     // Labels are as shown in YouTube's UI language (English here).
     playerSettingsKeep: ["Quality", "Sleep timer"],
@@ -163,7 +166,7 @@
     debug: false,
   };
 
-  const VERSION = "1.10.1"; // keep in sync with @version; shown on the Podcasts page and in the console
+  const VERSION = "1.10.2"; // keep in sync with @version; shown on the Podcasts page and in the console
   const HASH = "#" + CONFIG.hash;
   const log = (...a) => CONFIG.debug && console.log("[YT Podcasts]", ...a);
 
@@ -1723,7 +1726,9 @@
       if (attempt < 20) setTimeout(() => applyHighestQuality(attempt + 1), 500); // not known yet
       return;
     }
-    const best = levels[0];
+    // Best first. With a cap, the best one not above it (or the lowest, if all are above).
+    const cap = CONFIG.maxQuality || Infinity;
+    const best = levels.find((q) => qualityHeight(q) <= cap) || levels[levels.length - 1];
     try {
       p.setPlaybackQualityRange?.(best, best);
       p.setPlaybackQuality?.(best);
@@ -1734,12 +1739,16 @@
     }
   }
 
+  /** YouTube's quality names → lines. UNSURE: names beyond hd2160 ("hd2880", "highres"). */
+  const QUALITY_HEIGHT = { highres: 4320, hd2880: 2880, hd2160: 2160, hd1440: 1440, hd1080: 1080, hd720: 720, large: 480, medium: 360, small: 240, tiny: 144 };
+  const qualityHeight = (q) => QUALITY_HEIGHT[q] ?? (parseInt(String(q).replace(/\D/g, ""), 10) || 0);
+
   function storeQualityPreference() {
     if (!CONFIG.forceHighestQuality) return;
     try {
       const now = Date.now();
       localStorage.setItem("yt-player-quality", JSON.stringify({
-        data: JSON.stringify({ quality: 4320, previousQuality: 1080 }), // 4320 = 8K, i.e. "as high as it goes"
+        data: JSON.stringify({ quality: CONFIG.maxQuality || 4320, previousQuality: 1080 }), // 4320 = 8K, i.e. "as high as it goes"
         expiration: now + 365 * 86400000,
         creation: now,
       }));

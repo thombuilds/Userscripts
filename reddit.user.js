@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Reddit Tweaks (Narwhal-style old.reddit)
 // @description  Restyles old.reddit.com into a clean, minimal, app-like layout.
-// @version      1.4.1
+// @version      1.4.2
 // @updateURL    https://raw.githubusercontent.com/thombuilds/Userscripts/main/reddit.user.js
 // @downloadURL  https://raw.githubusercontent.com/thombuilds/Userscripts/main/reddit.user.js
 // @match        https://old.reddit.com/*
@@ -973,6 +973,29 @@
       padding: 0 !important;
       max-width: none !important;
     }
+
+    /* Crosspost preview (the original post, shown when a crosspost is
+       expanded): Reddit draws it as a white box, which left our light
+       text unreadable in dark mode and the body text flush to the edge. */
+    .thing .crosspost-preview {
+      background: var(--nw-fill) !important;
+      border: 1px solid var(--nw-separator) !important;
+      border-radius: 10px !important;
+      box-shadow: none !important;
+      color: var(--nw-text) !important;
+      padding: 10px 14px !important;
+      max-width: none !important;
+    }
+    .thing .crosspost-preview [class*="crosspost-preview"] {
+      background: transparent !important;
+      border-color: var(--nw-separator) !important;
+      color: inherit !important;
+      padding-left: 0 !important;
+      padding-right: 0 !important;
+      margin-left: 0 !important;
+      margin-right: 0 !important;
+    }
+    .thing .crosspost-preview a[class*="title"] { color: var(--nw-text) !important; font-weight: 600; }
 
     /* ---------- 2.7 Votes -------------------------------------------- */
     .midcol .arrow {

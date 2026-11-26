@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube Tweaks (Podcasts page, player, compact Home)
 // @description  Separate "Podcasts" page in the sidebar; trimmed player (no subtitles/AirPlay, highest quality, minimal settings menu, Picture-in-Picture button, "s" toggles a 1-hour sleep timer); compact Home grid.
-// @version      1.9.10
+// @version      1.9.11
 // @updateURL    https://raw.githubusercontent.com/thombuilds/Userscripts/main/youtube.user.js
 // @downloadURL  https://raw.githubusercontent.com/thombuilds/Userscripts/main/youtube.user.js
 // @match        https://www.youtube.com/*
@@ -151,7 +151,7 @@
     debug: false,
   };
 
-  const VERSION = "1.9.10"; // keep in sync with @version; shown on the Podcasts page and in the console
+  const VERSION = "1.9.11"; // keep in sync with @version; shown on the Podcasts page and in the console
   const HASH = "#" + CONFIG.hash;
   const log = (...a) => CONFIG.debug && console.log("[YT Podcasts]", ...a);
 
@@ -1655,7 +1655,9 @@
         position: sticky; top: var(--ytd-masthead-height, 56px); align-self: flex-start;
         max-height: calc(100vh - var(--ytd-masthead-height, 56px)); box-sizing: border-box;
         overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin;
-      }`;
+      }
+      html.ytpod-side-scrolling ytd-video-preview,
+      html.ytpod-side-scrolling #video-preview { display: none !important; }`;
     if (CONFIG.hideSubtitles)
       css += `
       .ytp-subtitles-button,
@@ -2091,6 +2093,28 @@
     e.preventDefault();
     side.scrollBy(e.deltaX * unit, e.deltaY * unit);
   }, { capture: true, passive: false });
+
+  /*
+   * Part 3. That preview is placed where the thumbnail was and doesn't follow
+   * the list when it scrolls, so it sat over the wrong tiles. Hide it while
+   * the list scrolls; it comes back once you move the mouse after scrolling
+   * stops (YouTube then shows it over the right thumbnail). UNSURE: preview element names.
+   */
+  let sideScrollTimer = 0;
+  let sideScrollStill = false;
+  document.addEventListener("scroll", (e) => {
+    if (!CONFIG.scrollableSidebar || !(e.target instanceof Element) || e.target.id !== "secondary") return;
+    document.documentElement.classList.add("ytpod-side-scrolling");
+    sideScrollStill = false;
+    clearTimeout(sideScrollTimer);
+    sideScrollTimer = setTimeout(() => (sideScrollStill = true), 150);
+  }, true);
+  document.addEventListener("mousemove", () => {
+    if (sideScrollStill) {
+      sideScrollStill = false;
+      document.documentElement.classList.remove("ytpod-side-scrolling");
+    }
+  }, { passive: true });
 
   /* ======================================================================
    * 13. SHORTS

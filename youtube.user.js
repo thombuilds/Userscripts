@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube Tweaks (Podcasts page, player, compact Home)
-// @description  Separate "Podcasts" page in the sidebar; trimmed player (no subtitles/AirPlay, highest quality, minimal settings menu, Picture-in-Picture button); compact Home grid.
-// @version      1.9.6
+// @description  Separate "Podcasts" page in the sidebar; trimmed player (no subtitles/AirPlay, highest quality, minimal settings menu, Picture-in-Picture button, "s" sets a 1-hour sleep timer); compact Home grid.
+// @version      1.9.7
 // @updateURL    https://raw.githubusercontent.com/thombuilds/Userscripts/main/youtube.user.js
 // @downloadURL  https://raw.githubusercontent.com/thombuilds/Userscripts/main/youtube.user.js
 // @match        https://www.youtube.com/*
@@ -121,6 +121,10 @@
     // plus the "p" key as a shortcut (ignored while typing in a text field).
     pipButton: true,
     pipKey: "p",
+    // Press this key on a video to set YouTube's sleep timer (via the gear menu).
+    // Set sleepKey: "" to turn it off. sleepMinutes must be one of the menu's options.
+    sleepKey: "s",
+    sleepMinutes: 60,
 
     // ---- Shorts ----
     // Hide Shorts everywhere (sidebar, shelves, tiles, tabs, chips) and turn
@@ -144,7 +148,7 @@
     debug: false,
   };
 
-  const VERSION = "1.9.6"; // keep in sync with @version; shown on the Podcasts page and in the console
+  const VERSION = "1.9.7"; // keep in sync with @version; shown on the Podcasts page and in the console
   const HASH = "#" + CONFIG.hash;
   const log = (...a) => CONFIG.debug && console.log("[YT Podcasts]", ...a);
 
@@ -1476,7 +1480,8 @@
     const el = h("div", { id: "ytpod-toast" },
       h("span", {}, message),
       undo && h("button", { onclick: () => { el.remove(); undo(); } }, "Undo"));
-    document.body.appendChild(el);
+    // In fullscreen only the fullscreen element is visible.
+    (document.fullscreenElement || document.webkitFullscreenElement || document.body).appendChild(el);
     toastTimer = setTimeout(() => el.remove(), 5000);
   }
 
@@ -1629,6 +1634,8 @@
         vertical-align: top; padding: 0 !important;
       }
       .ytpod-pip-button svg { width: 24px; height: 24px; flex: none; }
+      /* Sleep-timer hotkey clicks through the gear menu; keep that invisible. */
+      html.ytpod-sleep-auto .ytp-settings-menu, html.ytpod-sleep-auto .ytp-popup { opacity: 0 !important; }
     `;
     if (CONFIG.hideSubtitles)
       css += `
@@ -1961,6 +1968,69 @@
     e.preventDefault();
     e.stopPropagation();
     togglePip(video);
+  }, true);
+
+  /*
+   * Sleep timer hotkey. YouTube has no API for it, so this clicks through the
+   * gear menu: Settings → Sleep timer → "60 minutes", then closes the menu.
+   * The menu is made invisible meanwhile. UNSURE: option labels ("60 minutes",
+   * "1 hour"); matched loosely.
+   */
+  const visible = (el) => el.getClientRects().length > 0;
+  function waitForEl(fn, timeout = 2000) {
+    return new Promise((resolve) => {
+      const t0 = Date.now();
+      (function poll() {
+        const r = fn();
+        if (r || Date.now() - t0 > timeout) return resolve(r || null);
+        setTimeout(poll, 40);
+      })();
+    });
+  }
+  const visibleMenuItems = (root) => [...root.querySelectorAll(MENU_ITEM_SEL)].filter(visible);
+
+  let sleepBusy = false;
+  async function setSleepTimer() {
+    if (sleepBusy) return;
+    const player = document.getElementById("movie_player") || document.querySelector(".html5-video-player");
+    const gear = player?.querySelector(".ytp-settings-button");
+    if (!gear) return toast("Sleep timer: no player here");
+    const mins = CONFIG.sleepMinutes;
+    const wanted = new RegExp(`^(${mins}\\s*min|${mins % 60 === 0 ? `${mins / 60}\\s*(hour|hr)` : "$^"})`, "i");
+    sleepBusy = true;
+    document.documentElement.classList.add("ytpod-sleep-auto");
+    let ok = false;
+    try {
+      if (gear.getAttribute("aria-expanded") === "true") gear.click(); // start from a closed menu
+      gear.click();
+      const entry = await waitForEl(() => visibleMenuItems(player).find((i) => menuLabel(i).startsWith("sleep timer")));
+      if (entry) {
+        entry.click();
+        const option = await waitForEl(() => visibleMenuItems(player).find((i) => wanted.test(menuLabel(i))));
+        if (option) {
+          option.click();
+          ok = true;
+        }
+      }
+    } finally {
+      await new Promise((r) => setTimeout(r, 150));
+      if (gear.getAttribute("aria-expanded") === "true") gear.click(); // close what's left open
+      document.documentElement.classList.remove("ytpod-sleep-auto");
+      sleepBusy = false;
+    }
+    const label = mins % 60 === 0 ? `${mins / 60} hour${mins > 60 ? "s" : ""}` : `${mins} minutes`;
+    toast(ok ? `Sleep timer: ${label}` : "Couldn't set the sleep timer (menu not found)");
+  }
+
+  document.addEventListener("keydown", (e) => {
+    if (!CONFIG.sleepKey || e.key.toLowerCase() !== CONFIG.sleepKey.toLowerCase()) return;
+    if (e.metaKey || e.ctrlKey || e.altKey || e.repeat) return;
+    const t = e.target;
+    if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
+    if (!location.pathname.startsWith("/watch") || state.open) return;
+    e.preventDefault();
+    e.stopPropagation();
+    setSleepTimer();
   }, true);
 
   /* ======================================================================

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Reddit Tweaks (Narwhal-style old.reddit)
 // @description  Restyles old.reddit.com into a clean, minimal, app-like layout.
-// @version      1.4.3
+// @version      1.4.4
 // @updateURL    https://raw.githubusercontent.com/thombuilds/Userscripts/main/reddit.user.js
 // @downloadURL  https://raw.githubusercontent.com/thombuilds/Userscripts/main/reddit.user.js
 // @match        https://old.reddit.com/*
@@ -771,6 +771,29 @@
       font-weight: 600;
     }
     .nw-meta > span.nw-sep { margin: 0 5px !important; color: var(--nw-text-faint); }
+    /* Crosspost source: "⇄ r/original" pill (JS 3b) */
+    .nw-meta > a.nw-xpost {
+      flex: 0 1 auto;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 0 7px !important;
+      border-radius: 6px;
+      background: color-mix(in srgb, var(--nw-accent) 15%, transparent);
+      color: var(--nw-accent) !important;
+      font-weight: 600;
+    }
+    .nw-meta > a.nw-xpost::before {
+      content: "";
+      flex: none;
+      width: 11px; height: 11px;
+      background: currentColor;
+      -webkit-mask: ${ICONS.crosspost} center / contain no-repeat;
+      mask: ${ICONS.crosspost} center / contain no-repeat;
+    }
     /* Reddit's expand button, moved to the start of the row (JS 3b). */
     .nw-meta > .expando-button {
       flex: 0 0 auto;
@@ -1001,7 +1024,32 @@
       color: var(--nw-text) !important;
       opacity: 1 !important;
     }
-    .thing .crosspost-preview a[class*="title"] { font-weight: 600; }
+    /* "Original post in r/…" label on top (the name comes from JS 3b). */
+    .thing .crosspost-preview::before {
+      content: var(--nw-xpost-from, "Original post");
+      display: block;
+      margin: 0 0 6px;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.03em;
+      text-transform: uppercase;
+      color: var(--nw-accent);
+    }
+    /* The original's title: bigger and bold, set off from the body below. */
+    .thing .crosspost-preview :is([class*="crosspost-preview-header"], [class*="crosspost-preview-title"], a[class*="title"]) {
+      font-size: 17px !important;
+      font-weight: 650 !important;
+      line-height: 1.3 !important;
+    }
+    .thing .crosspost-preview [class*="crosspost-preview-header"] {
+      padding-bottom: 8px !important;
+      margin-bottom: 10px !important;
+    }
+    /* The body: regular weight, a little smaller and softer. */
+    .thing .crosspost-preview .md {
+      font-size: 14px !important;
+      color: var(--nw-text-muted) !important;
+    }
 
     /* ---------- 2.7 Votes -------------------------------------------- */
     .midcol .arrow {
@@ -1561,6 +1609,16 @@
   /* ---------- 3b. Metadata line under post titles -------------------- */
   // Builds:  r/subreddit · 3h ago · 120 comments
   // We *clone* Reddit's existing links, so they still work normally.
+  // A crosspost's link (data-url) is the original post's permalink, in the
+  // subreddit it came from. Returns that subreddit's name, or null if this
+  // isn't a crosspost.
+  function crosspostSourceOf(post) {
+    const m = /^(?:https?:\/\/[^/]*reddit\.com)?\/r\/([A-Za-z0-9_]+)\/comments\//.exec(post.dataset.url || "");
+    if (!m) return null;
+    const here = post.dataset.subreddit || "";
+    return m[1].toLowerCase() === here.toLowerCase() ? null : m[1];
+  }
+
   function buildMeta(post) {
     if (post.classList.contains("nw-meta-ready")) return;
     const entry = post.querySelector(":scope > .entry");
@@ -1574,6 +1632,18 @@
     const comments = entry.querySelector(".buttons a.comments");
 
     if (sub) parts.push(sub.cloneNode(true));
+    const from = crosspostSourceOf(post);
+    if (from) {
+      // Crosspost: where the original lives, as an accent pill.
+      const x = document.createElement("a");
+      x.className = "nw-xpost";
+      x.href = `/r/${from}/`;
+      x.title = `Crossposted from r/${from}`;
+      x.textContent = `r/${from}`;
+      parts.push(x);
+      // Also labels the expanded preview (CSS 2.6, .crosspost-preview::before).
+      post.style.setProperty("--nw-xpost-from", `"Original post in r/${from}"`);
+    }
     if (time) {
       const t = time.cloneNode(true);
       // Drop "live-timestamp" so Reddit's timer doesn't rewrite it to "3 hours ago".

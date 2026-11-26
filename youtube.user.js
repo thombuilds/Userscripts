@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube Tweaks (Podcasts page, player, compact Home)
 // @description  Separate "Podcasts" page in the sidebar; trimmed player (no subtitles/AirPlay, highest quality, minimal settings menu, Picture-in-Picture button, "s" toggles a 1-hour sleep timer); SponsorBlock skipping ("u" undoes); compact Home grid.
-// @version      1.10.0
+// @version      1.10.1
 // @updateURL    https://raw.githubusercontent.com/thombuilds/Userscripts/main/youtube.user.js
 // @downloadURL  https://raw.githubusercontent.com/thombuilds/Userscripts/main/youtube.user.js
 // @match        https://www.youtube.com/*
@@ -163,7 +163,7 @@
     debug: false,
   };
 
-  const VERSION = "1.10.0"; // keep in sync with @version; shown on the Podcasts page and in the console
+  const VERSION = "1.10.1"; // keep in sync with @version; shown on the Podcasts page and in the console
   const HASH = "#" + CONFIG.hash;
   const log = (...a) => CONFIG.debug && console.log("[YT Podcasts]", ...a);
 
@@ -2225,14 +2225,20 @@
     return location.pathname === "/watch" ? new URLSearchParams(location.search).get("v") || "" : "";
   }
 
-  /** Live streams and premieres have no segments. UNSURE: getVideoData's isLive. */
+  /**
+   * Live streams and premieres have no segments. Not judged by video.duration:
+   * YouTube streams through MediaSource, whose duration can still be Infinity
+   * when an ordinary video's first data arrives (that wrongly skipped every
+   * fetch in 1.10.0). UNSURE: getVideoData's isLive, the ytp-live class.
+   */
   function sbIsLive(video) {
+    const player = video.closest(".html5-video-player");
     try {
-      if (document.getElementById("movie_player")?.getVideoData?.()?.isLive) return true;
+      if (player?.getVideoData?.()?.isLive) return true;
     } catch {
       /* content world */
     }
-    return video.duration === Infinity;
+    return !!player?.classList.contains("ytp-live");
   }
 
   /** Channel in sponsorBlockAllowChannels? Read from the watch page. UNSURE: selectors. */
@@ -2269,7 +2275,8 @@
     sbSegments(id).then((segs) => {
       if (sb.videoId !== id) return; // moved on meanwhile
       sb.segments = segs;
-      log("SponsorBlock segments for", id, segs);
+      // Always printed (one line per video), so you can see it's working.
+      console.info(`[YT Tweaks] SponsorBlock: ${segs.length} segment${segs.length === 1 ? "" : "s"} to skip in ${id}`);
       sbCheck(video);
     }, () => {});
   }

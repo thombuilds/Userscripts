@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Reddit Tweaks (Narwhal-style old.reddit)
 // @description  Restyles old.reddit.com into a clean, minimal, app-like layout.
-// @version      1.4.2
+// @version      1.4.3
 // @updateURL    https://raw.githubusercontent.com/thombuilds/Userscripts/main/reddit.user.js
 // @downloadURL  https://raw.githubusercontent.com/thombuilds/Userscripts/main/reddit.user.js
 // @match        https://old.reddit.com/*
@@ -995,7 +995,13 @@
       margin-left: 0 !important;
       margin-right: 0 !important;
     }
-    .thing .crosspost-preview a[class*="title"] { color: var(--nw-text) !important; font-weight: 600; }
+    /* Its title/header keeps Reddit's dark text otherwise: everything that
+       isn't the post body gets our text color. */
+    .thing .crosspost-preview :not(.md, .md *) {
+      color: var(--nw-text) !important;
+      opacity: 1 !important;
+    }
+    .thing .crosspost-preview a[class*="title"] { font-weight: 600; }
 
     /* ---------- 2.7 Votes -------------------------------------------- */
     .midcol .arrow {

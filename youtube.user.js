@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube Tweaks (Podcasts page, player, compact Home)
 // @description  Separate "Podcasts" page in the sidebar; trimmed player (no subtitles/AirPlay, highest quality, minimal settings menu, Picture-in-Picture button, "s" toggles a 1-hour sleep timer); compact Home grid.
-// @version      1.9.11
+// @version      1.9.12
 // @updateURL    https://raw.githubusercontent.com/thombuilds/Userscripts/main/youtube.user.js
 // @downloadURL  https://raw.githubusercontent.com/thombuilds/Userscripts/main/youtube.user.js
 // @match        https://www.youtube.com/*
@@ -128,6 +128,9 @@
     // Watch page: the recommended videos on the right scroll on their own,
     // so the video stays in view while you browse them.
     scrollableSidebar: true,
+    // Width of the recommended videos' thumbnails, so more fit on screen.
+    // 0 = YouTube's own size.
+    sidebarThumbWidth: 200,
 
     // ---- Shorts ----
     // Hide Shorts everywhere (sidebar, shelves, tiles, tabs, chips) and turn
@@ -151,7 +154,7 @@
     debug: false,
   };
 
-  const VERSION = "1.9.11"; // keep in sync with @version; shown on the Podcasts page and in the console
+  const VERSION = "1.9.12"; // keep in sync with @version; shown on the Podcasts page and in the console
   const HASH = "#" + CONFIG.hash;
   const log = (...a) => CONFIG.debug && console.log("[YT Podcasts]", ...a);
 
@@ -1658,6 +1661,20 @@
       }
       html.ytpod-side-scrolling ytd-video-preview,
       html.ytpod-side-scrolling #video-preview { display: none !important; }`;
+    if (CONFIG.sidebarThumbWidth) { // UNSURE: lockup class names (old "-wiz" and new spellings both matched)
+      const w = CONFIG.sidebarThumbWidth;
+      css += `
+      ytd-watch-flexy #secondary yt-lockup-view-model [class*="__content-image"] {
+        width: ${w}px !important; min-width: ${w}px !important; max-width: ${w}px !important; flex: none !important;
+      }
+      ytd-watch-flexy #secondary ytd-compact-video-renderer ytd-thumbnail {
+        width: ${w}px !important; flex: none !important;
+      }
+      ytd-watch-flexy #secondary yt-lockup-view-model h3,
+      ytd-watch-flexy #secondary yt-lockup-view-model h3 * { font-size: 14px !important; line-height: 20px !important; }
+      ytd-watch-flexy #secondary yt-lockup-view-model [class*="metadata"] [class*="metadata-row"],
+      ytd-watch-flexy #secondary yt-lockup-view-model [class*="metadata"] [class*="metadata-row"] * { font-size: 12px !important; line-height: 18px !important; }`;
+    }
     if (CONFIG.hideSubtitles)
       css += `
       .ytp-subtitles-button,

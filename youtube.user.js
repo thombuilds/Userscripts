@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube Tweaks (Podcasts page, player, compact Home)
 // @description  Separate "Podcasts" page in the sidebar; trimmed player (no subtitles/AirPlay, highest quality, minimal settings menu, Picture-in-Picture button, "s" toggles a 1-hour sleep timer); compact Home grid.
-// @version      1.9.8
+// @version      1.9.9
 // @updateURL    https://raw.githubusercontent.com/thombuilds/Userscripts/main/youtube.user.js
 // @downloadURL  https://raw.githubusercontent.com/thombuilds/Userscripts/main/youtube.user.js
 // @match        https://www.youtube.com/*
@@ -125,6 +125,9 @@
     // Set sleepKey: "" to turn it off. sleepMinutes must be one of the menu's options.
     sleepKey: "s",
     sleepMinutes: 60,
+    // Watch page: the recommended videos on the right scroll on their own,
+    // so the video stays in view while you browse them.
+    scrollableSidebar: true,
 
     // ---- Shorts ----
     // Hide Shorts everywhere (sidebar, shelves, tiles, tabs, chips) and turn
@@ -148,7 +151,7 @@
     debug: false,
   };
 
-  const VERSION = "1.9.8"; // keep in sync with @version; shown on the Podcasts page and in the console
+  const VERSION = "1.9.9"; // keep in sync with @version; shown on the Podcasts page and in the console
   const HASH = "#" + CONFIG.hash;
   const log = (...a) => CONFIG.debug && console.log("[YT Podcasts]", ...a);
 
@@ -1642,7 +1645,17 @@
         transition: opacity .4s;
       }
       .ytpod-player-toast.ytpod-fade { opacity: 0; }
+      /* YouTube's own "Sleep timer set" notification (bottom left) after our hotkey. UNSURE: element names. */
+      html.ytpod-quiet-toast tp-yt-paper-toast, html.ytpod-quiet-toast yt-notification-action-renderer,
+      html.ytpod-quiet-toast yt-snackbar-container, html.ytpod-quiet-toast snackbar-container { display: none !important; }
     `;
+    if (CONFIG.scrollableSidebar) // UNSURE: ytd-watch-flexy attribute / ids
+      css += `
+      ytd-watch-flexy[is-two-columns_] #secondary {
+        position: sticky; top: var(--ytd-masthead-height, 56px); align-self: flex-start;
+        max-height: calc(100vh - var(--ytd-masthead-height, 56px)); box-sizing: border-box;
+        overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin;
+      }`;
     if (CONFIG.hideSubtitles)
       css += `
       .ytp-subtitles-button,
@@ -1996,6 +2009,7 @@
   const visibleMenuItems = (root) => [...root.querySelectorAll(MENU_ITEM_SEL)].filter(visible);
 
   let sleepBusy = false;
+  let quietToastTimer = 0;
   let sleepUntil = 0; // when the timer we set runs out (backup if the menu doesn't show the current value)
 
   /** A short message at the top centre of the video, like YouTube's own volume/speed bubble. */
@@ -2017,7 +2031,8 @@
     const wantOn = new RegExp(`^(${mins}\\s*min|${mins % 60 === 0 ? `${mins / 60}\\s*(hour|hr)` : "$^"})`, "i");
     const wantOff = /^off\b/i;
     sleepBusy = true;
-    document.documentElement.classList.add("ytpod-sleep-auto");
+    document.documentElement.classList.add("ytpod-sleep-auto", "ytpod-quiet-toast");
+    clearTimeout(quietToastTimer);
     let result = null; // "on" | "off" | null (failed)
     try {
       if (gear.getAttribute("aria-expanded") === "true") gear.click(); // start from a closed menu
@@ -2041,6 +2056,8 @@
       document.documentElement.classList.remove("ytpod-sleep-auto");
       sleepBusy = false;
     }
+    // YouTube's notification stays up a few seconds; keep it hidden until it's gone.
+    quietToastTimer = setTimeout(() => document.documentElement.classList.remove("ytpod-quiet-toast"), 6000);
     if (result) sleepUntil = result === "on" ? Date.now() + mins * 60000 : 0;
     const label = mins % 60 === 0 ? `${mins / 60} hour${mins > 60 ? "s" : ""}` : `${mins} minutes`;
     playerToast(player, result === "on" ? `Sleep timer: ${label}` : result === "off" ? "Sleep timer off" : "Couldn't change the sleep timer");

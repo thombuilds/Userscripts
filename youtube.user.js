@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube Tweaks (Podcasts page, player, compact Home)
 // @description  Separate "Podcasts" page in the sidebar; trimmed player (no subtitles/AirPlay, highest quality, minimal settings menu, Picture-in-Picture button, "s" toggles a 1-hour sleep timer); compact Home grid.
-// @version      1.9.9
+// @version      1.9.10
 // @updateURL    https://raw.githubusercontent.com/thombuilds/Userscripts/main/youtube.user.js
 // @downloadURL  https://raw.githubusercontent.com/thombuilds/Userscripts/main/youtube.user.js
 // @match        https://www.youtube.com/*
@@ -151,7 +151,7 @@
     debug: false,
   };
 
-  const VERSION = "1.9.9"; // keep in sync with @version; shown on the Podcasts page and in the console
+  const VERSION = "1.9.10"; // keep in sync with @version; shown on the Podcasts page and in the console
   const HASH = "#" + CONFIG.hash;
   const log = (...a) => CONFIG.debug && console.log("[YT Podcasts]", ...a);
 
@@ -2073,6 +2073,24 @@
     e.stopPropagation();
     toggleSleepTimer();
   }, true);
+
+  /*
+   * Scrollable sidebar, part 2. Hovering a thumbnail puts YouTube's preview
+   * player on top of it; that overlay lives outside the sidebar, so the wheel
+   * scrolled the (sticky) page instead of the list. Any wheel over the
+   * sidebar's area that didn't start inside it is passed to the sidebar.
+   */
+  document.addEventListener("wheel", (e) => {
+    if (!CONFIG.scrollableSidebar || e.ctrlKey || !location.pathname.startsWith("/watch") || state.open) return;
+    const side = document.querySelector("ytd-watch-flexy[is-two-columns_] #secondary");
+    if (!side || !(e.target instanceof Element) || side.contains(e.target)) return; // inside: native scrolling works
+    if (e.target.closest(".ytp-popup, .ytp-settings-menu")) return; // player menus scroll themselves
+    const r = side.getBoundingClientRect();
+    if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) return;
+    const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? side.clientHeight : 1;
+    e.preventDefault();
+    side.scrollBy(e.deltaX * unit, e.deltaY * unit);
+  }, { capture: true, passive: false });
 
   /* ======================================================================
    * 13. SHORTS

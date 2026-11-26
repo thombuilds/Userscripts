@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube Tweaks (Podcasts page, player, compact Home)
 // @description  Separate "Podcasts" page in the sidebar; trimmed player (no subtitles/AirPlay, highest quality, minimal settings menu, Picture-in-Picture button, "s" toggles a 1-hour sleep timer); compact Home grid.
-// @version      1.9.12
+// @version      1.9.13
 // @updateURL    https://raw.githubusercontent.com/thombuilds/Userscripts/main/youtube.user.js
 // @downloadURL  https://raw.githubusercontent.com/thombuilds/Userscripts/main/youtube.user.js
 // @match        https://www.youtube.com/*
@@ -154,7 +154,7 @@
     debug: false,
   };
 
-  const VERSION = "1.9.12"; // keep in sync with @version; shown on the Podcasts page and in the console
+  const VERSION = "1.9.13"; // keep in sync with @version; shown on the Podcasts page and in the console
   const HASH = "#" + CONFIG.hash;
   const log = (...a) => CONFIG.debug && console.log("[YT Podcasts]", ...a);
 
@@ -1667,6 +1667,10 @@
       ytd-watch-flexy #secondary yt-lockup-view-model [class*="__content-image"] {
         width: ${w}px !important; min-width: ${w}px !important; max-width: ${w}px !important; flex: none !important;
       }
+      .ytpod-side-thumb {
+        width: ${w}px !important; min-width: ${w}px !important; max-width: ${w}px !important; flex: 0 0 ${w}px !important;
+      }
+      .ytpod-side-row[data-ytpod-grid] { grid-template-columns: ${w}px minmax(0, 1fr) !important; }
       ytd-watch-flexy #secondary ytd-compact-video-renderer ytd-thumbnail {
         width: ${w}px !important; flex: none !important;
       }
@@ -2285,6 +2289,37 @@
       grid.style.setProperty("--ytd-rich-grid-items-per-row", cols, "important");
   }
 
+  /*
+   * Watch-page sidebar thumbnails (see sidebarThumbWidth). The CSS guesses at
+   * class names; this finds the thumbnail box by layout instead: from each
+   * big image, walk up to the element that sits side by side with the
+   * title/text in a row, and tag it (the CSS then sizes it).
+   */
+  function compactSidebar() {
+    if (!CONFIG.sidebarThumbWidth || !location.pathname.startsWith("/watch")) return;
+    const side = document.querySelector("ytd-watch-flexy #secondary");
+    if (!side) return;
+    for (const img of side.querySelectorAll("img")) {
+      if (img.dataset.ytpodSide || img.closest(".ytpod-side-thumb")) continue;
+      if (img.getBoundingClientRect().width < 100) continue; // avatars, icons, not laid out yet
+      img.dataset.ytpodSide = "1";
+      let el = img;
+      for (let n = 0; n < 10 && el.parentElement && el.parentElement !== side; n++) {
+        const row = el.parentElement;
+        const cs = getComputedStyle(row);
+        const isRow = (/flex/.test(cs.display) && !/column/.test(cs.flexDirection)) || /grid/.test(cs.display);
+        const hasText = [...row.children].some((c) => c !== el && (c.textContent || "").trim().length > 10);
+        if (isRow && hasText) {
+          el.classList.add("ytpod-side-thumb");
+          row.classList.add("ytpod-side-row");
+          if (/grid/.test(cs.display)) row.dataset.ytpodGrid = "1";
+          break;
+        }
+        el = row;
+      }
+    }
+  }
+
   function watchGrids() {
     if (!CONFIG.uniformGrids) return;
     for (const grid of document.querySelectorAll("ytd-rich-grid-renderer")) {
@@ -2313,6 +2348,7 @@
       watchGrids();
       hideShortsByText();
       hideShelvesByTitle();
+      compactSidebar();
       if (state.open) mountPage(); // in case YouTube rebuilt #page-manager
     }, 500);
   }

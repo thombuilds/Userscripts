@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube Tweaks (Podcasts page, player, compact Home)
-// @description  Separate "Podcasts" page in the sidebar; trimmed player (no subtitles/AirPlay, highest quality, minimal settings menu, Picture-in-Picture button, "s" toggles a 1-hour sleep timer); compact Home grid.
-// @version      1.9.14
+// @description  Separate "Podcasts" page in the sidebar; trimmed player (no subtitles/AirPlay, highest quality, minimal settings menu, Picture-in-Picture button, "s" toggles a 1-hour sleep timer); SponsorBlock skipping ("u" undoes); compact Home grid.
+// @version      1.10.0
 // @updateURL    https://raw.githubusercontent.com/thombuilds/Userscripts/main/youtube.user.js
 // @downloadURL  https://raw.githubusercontent.com/thombuilds/Userscripts/main/youtube.user.js
 // @match        https://www.youtube.com/*
@@ -25,6 +25,7 @@
  *  10. PODCASTS PAGE       – the overlay page, sections, tiles, buttons, toast
  *  11. NAVIGATION          – #podcasts hash, back/forward, YouTube SPA events
  *  12. PLAYER              – hide subtitles/AirPlay, force highest quality, trim the settings menu, PiP button
+ *  12b. SPONSORBLOCK      – skip sponsor segments (SponsorBlock API), "u" to undo a skip
  *  13. SHORTS              – hide Shorts everywhere, open /shorts/ links in the normal player
  *  14. GRID LAYOUT         – 5 tiles per row on every YouTube video grid, same as the Podcasts page
  *  15. BOOT                – start-up + one throttled MutationObserver
@@ -131,6 +132,14 @@
     // Width of the recommended videos' thumbnails, so more fit on screen.
     // 0 = YouTube's own size.
     sidebarThumbWidth: 200,
+    // SponsorBlock (see section 12b): skip these segment categories automatically.
+    // Others: "intro", "outro", "preview", "filler", "music_offtopic".
+    // sponsorBlockUndoKey jumps back to the last skipped segment and stops skipping it.
+    // Channels in sponsorBlockAllowChannels are never skipped (name or @handle).
+    sponsorBlock: true,
+    sponsorBlockCategories: ["sponsor", "selfpromo", "interaction"],
+    sponsorBlockUndoKey: "u",
+    sponsorBlockAllowChannels: [],
 
     // ---- Shorts ----
     // Hide Shorts everywhere (sidebar, shelves, tiles, tabs, chips) and turn
@@ -154,7 +163,7 @@
     debug: false,
   };
 
-  const VERSION = "1.9.14"; // keep in sync with @version; shown on the Podcasts page and in the console
+  const VERSION = "1.10.0"; // keep in sync with @version; shown on the Podcasts page and in the console
   const HASH = "#" + CONFIG.hash;
   const log = (...a) => CONFIG.debug && console.log("[YT Podcasts]", ...a);
 
@@ -1742,7 +1751,9 @@
   // Media events don't bubble, but a capturing listener on document still sees them.
   // "loadeddata" fires for every new video, including autoplay-next and SPA navigation.
   document.addEventListener("loadeddata", (e) => {
-    if (e.target instanceof HTMLVideoElement && e.target.closest("#movie_player")) applyHighestQuality();
+    if (!(e.target instanceof HTMLVideoElement) || !e.target.closest("#movie_player")) return;
+    applyHighestQuality();
+    sbSync(e.target); // SponsorBlock: new video → fetch its segments
   }, true);
 
   /*
@@ -2138,6 +2149,212 @@
   }, { passive: true });
 
   /* ======================================================================
+   * 12b. SPONSORBLOCK
+   *    Skips sponsor segments using the public SponsorBlock API
+   *    (sponsor.ajay.app). No extension, no key. Privacy: only the first 4
+   *    hex chars of the video ID's SHA-256 are sent; the server answers with
+   *    every video sharing that prefix and we keep ours.
+   *    Plain fetch works in both worlds: the API sends
+   *    Access-Control-Allow-Origin: *, and YouTube's CSP has no connect-src.
+   *
+   *    Skips only when playback runs into a segment. Seeking into one yourself
+   *    (dragging the progress bar there) plays it. The undo key jumps back to
+   *    the start of the last skipped segment and stops skipping it for this video.
+   * ==================================================================== */
+
+  const SB_API = "https://sponsor.ajay.app/api/skipSegments/";
+  const SB_LABELS = {
+    sponsor: "sponsor", selfpromo: "self-promotion", interaction: "interaction reminder",
+    intro: "intro", outro: "outro", preview: "preview", filler: "filler", music_offtopic: "non-music part",
+  };
+  const sbCache = new Map(); // video id → Promise<[{ start, end, category, uuid }]>
+  const sb = {
+    videoId: "",
+    segments: [], // for sb.videoId, sorted by start
+    disabled: new Set(), // segment UUIDs not to skip again (undone)
+    lastSkip: null, // the last segment we skipped
+    userInside: "", // UUID of a segment you seeked into yourself (not skipped until you leave it)
+    ourSeek: false, // the next "seeking" event is our own jump
+    timer: 0,
+  };
+
+  const sbWarn = (...a) => CONFIG.debug && console.warn("[YT Tweaks] SponsorBlock:", ...a);
+
+  async function sha256Hex(str) {
+    const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(str));
+    return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
+  }
+
+  /** Segments of one video (cached; a failed fetch is forgotten so it can be retried). */
+  function sbSegments(id) {
+    if (sbCache.has(id)) return sbCache.get(id);
+    const p = (async () => {
+      const cats = CONFIG.sponsorBlockCategories || [];
+      if (!cats.length) return [];
+      const prefix = (await sha256Hex(id)).slice(0, 4);
+      const url = `${SB_API}${prefix}?categories=${encodeURIComponent(JSON.stringify(cats))}` +
+        `&actionTypes=${encodeURIComponent(JSON.stringify(["skip"]))}`;
+      const res = await fetch(url, { credentials: "omit" });
+      if (res.status === 404) return []; // no segments for any video with this prefix
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const entry = (await res.json()).find((x) => x.videoID === id);
+      // UNSURE: response shape { videoID, segments: [{ segment: [start, end], category, actionType, UUID }] }.
+      return (entry?.segments || [])
+        .filter((s) => s.actionType === "skip" && cats.includes(s.category) && Array.isArray(s.segment))
+        .map((s) => ({ start: Number(s.segment[0]), end: Number(s.segment[1]), category: s.category, uuid: s.UUID }))
+        .filter((s) => s.end - s.start >= 0.5)
+        .sort((a, b) => a.start - b.start);
+    })();
+    sbCache.set(id, p);
+    p.catch((e) => {
+      sbCache.delete(id);
+      sbWarn("fetch failed for", id, e);
+    });
+    return p;
+  }
+
+  /** The video playing in the main player: the player API, else ?v= in the URL. */
+  function sbCurrentId() {
+    const p = document.getElementById("movie_player");
+    try {
+      const id = p?.getVideoData?.()?.video_id;
+      if (id) return id;
+    } catch {
+      /* content world */
+    }
+    return location.pathname === "/watch" ? new URLSearchParams(location.search).get("v") || "" : "";
+  }
+
+  /** Live streams and premieres have no segments. UNSURE: getVideoData's isLive. */
+  function sbIsLive(video) {
+    try {
+      if (document.getElementById("movie_player")?.getVideoData?.()?.isLive) return true;
+    } catch {
+      /* content world */
+    }
+    return video.duration === Infinity;
+  }
+
+  /** Channel in sponsorBlockAllowChannels? Read from the watch page. UNSURE: selectors. */
+  function sbChannelAllowed() {
+    const list = CONFIG.sponsorBlockAllowChannels || [];
+    if (!list.length) return false;
+    const a = document.querySelector("ytd-watch-metadata ytd-channel-name a, #owner ytd-channel-name a, ytd-video-owner-renderer a[href^='/@']");
+    let channel = (a?.textContent || "").trim();
+    try {
+      channel ||= document.getElementById("movie_player")?.getVideoData?.()?.author || "";
+    } catch {
+      /* content world */
+    }
+    return inList(list, { channel, channelUrl: a?.getAttribute("href") || "" });
+  }
+
+  /** Called on every new video (loadeddata) and on each tick: switch state to the current video. */
+  function sbSync(video) {
+    if (!CONFIG.sponsorBlock || !location.pathname.startsWith("/watch")) return;
+    video ||= document.querySelector("#movie_player video");
+    if (!video) return;
+    sbAttach(video);
+    // During an ad the player may report the ad's video id; keep the real video's state. UNSURE: class name
+    if (video.closest(".html5-video-player")?.classList.contains("ad-showing")) return;
+    const id = sbCurrentId();
+    if (!id || id === sb.videoId) return;
+    sb.videoId = id;
+    sb.segments = [];
+    sb.disabled = new Set();
+    sb.lastSkip = null;
+    sb.userInside = "";
+    clearTimeout(sb.timer);
+    if (sbIsLive(video)) return;
+    sbSegments(id).then((segs) => {
+      if (sb.videoId !== id) return; // moved on meanwhile
+      sb.segments = segs;
+      log("SponsorBlock segments for", id, segs);
+      sbCheck(video);
+    }, () => {});
+  }
+
+  /** Listen to one <video> element (YouTube usually keeps the same one across videos). */
+  function sbAttach(video) {
+    if (video.dataset.ytpodSb) return;
+    video.dataset.ytpodSb = "1";
+    video.addEventListener("timeupdate", () => sbCheck(video));
+    video.addEventListener("play", () => sbCheck(video));
+    video.addEventListener("ratechange", () => sbSchedule(video));
+    video.addEventListener("pause", () => clearTimeout(sb.timer));
+    video.addEventListener("seeking", () => {
+      if (sb.ourSeek) {
+        sb.ourSeek = false;
+        return;
+      }
+      // You moved the playhead: if it landed inside a segment, let that segment play.
+      sb.userInside = sbSegmentAt(video.currentTime)?.uuid || "";
+    });
+    video.addEventListener("seeked", () => sbSchedule(video));
+  }
+
+  const sbSegmentAt = (t) => sb.segments.find((s) => t >= s.start && t < s.end - 0.2);
+
+  /** Skip if playback is inside a segment we should skip; then plan the next check. */
+  function sbCheck(video) {
+    if (!CONFIG.sponsorBlock || !sb.segments.length || sb.videoId !== sbCurrentId()) return;
+    const player = video.closest(".html5-video-player");
+    if (player?.classList.contains("ad-showing")) return; // an ad plays in the same element. UNSURE: class name
+    const t = video.currentTime;
+    const seg = sbSegmentAt(t);
+    if (sb.userInside && seg?.uuid !== sb.userInside) sb.userInside = ""; // you left the one you seeked into
+    if (seg && !video.paused && seg.uuid !== sb.userInside && !sb.disabled.has(seg.uuid) && !sbChannelAllowed()) {
+      sb.ourSeek = true;
+      video.currentTime = seg.end; // UNSURE: player.seekTo() might keep YouTube's UI more in sync
+      sb.lastSkip = seg;
+      playerToast(player || video.parentElement,
+        `Skipped ${SB_LABELS[seg.category] || seg.category} (${fmtClock(seg.end - seg.start)})` +
+        (CONFIG.sponsorBlockUndoKey ? ` · ${CONFIG.sponsorBlockUndoKey} to undo` : ""));
+    }
+    sbSchedule(video);
+  }
+
+  /** timeupdate fires only ~4 times a second; a timer catches the next segment start on time. */
+  function sbSchedule(video) {
+    clearTimeout(sb.timer);
+    if (video.paused || !sb.segments.length) return;
+    const t = video.currentTime;
+    const next = sb.segments.find((s) => s.start > t && !sb.disabled.has(s.uuid));
+    if (!next) return;
+    const ms = ((next.start - t) / (video.playbackRate || 1)) * 1000;
+    if (ms < 5000) sb.timer = setTimeout(() => sbCheck(video), Math.max(0, ms) + 20); // farther away: timeupdate reschedules
+  }
+
+  /** "1:18", "12:05", "1:02:33" */
+  function fmtClock(sec) {
+    sec = Math.max(0, Math.round(sec));
+    const hh = Math.floor(sec / 3600);
+    const mm = Math.floor((sec % 3600) / 60);
+    const ss = String(sec % 60).padStart(2, "0");
+    return hh ? `${hh}:${String(mm).padStart(2, "0")}:${ss}` : `${mm}:${ss}`;
+  }
+
+  document.addEventListener("keydown", (e) => {
+    const key = CONFIG.sponsorBlockUndoKey;
+    if (!CONFIG.sponsorBlock || !key || e.key.toLowerCase() !== key.toLowerCase()) return;
+    if (e.metaKey || e.ctrlKey || e.altKey || e.repeat) return;
+    const t = e.target;
+    if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
+    if (!location.pathname.startsWith("/watch") || state.open || !sb.lastSkip) return;
+    const video = document.querySelector("#movie_player video");
+    if (!video || sb.videoId !== sbCurrentId()) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const seg = sb.lastSkip;
+    sb.lastSkip = null;
+    sb.disabled.add(seg.uuid);
+    sb.ourSeek = true;
+    video.currentTime = seg.start;
+    playerToast(video.closest(".html5-video-player") || video.parentElement,
+      `Back to ${SB_LABELS[seg.category] || seg.category} · won't skip it again`);
+  }, true);
+
+  /* ======================================================================
    * 13. SHORTS
    *    CSS hides anything that is or links to a Short (needs :has, Safari 15.4+).
    *    JS hides things only recognizable by their text ("Shorts" chips/tabs),
@@ -2349,6 +2566,7 @@
       hideShortsByText();
       hideShelvesByTitle();
       compactSidebar();
+      sbSync();
       if (state.open) mountPage(); // in case YouTube rebuilt #page-manager
     }, 500);
   }

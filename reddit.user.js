@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Reddit Tweaks (Narwhal-style old.reddit)
 // @description  Restyles old.reddit.com into a clean, minimal, app-like layout.
-// @version      1.5.2
+// @version      1.5.3
 // @updateURL    https://raw.githubusercontent.com/thombuilds/Userscripts/main/reddit.user.js
 // @downloadURL  https://raw.githubusercontent.com/thombuilds/Userscripts/main/reddit.user.js
 // @match        https://old.reddit.com/*
@@ -1620,6 +1620,18 @@
     const entry = post.querySelector(":scope > .entry");
     const tagline = entry && entry.querySelector(".tagline");
     if (!tagline) return;
+
+    // "(youtube.com)" next to the title: open the linked page itself (new tab)
+    // instead of Reddit's list of posts from that site. Text posts keep theirs.
+    const domainLink = entry.querySelector(".domain a");
+    if (domainLink && !post.classList.contains("self") && post.dataset.url) {
+      try {
+        domainLink.href = new URL(post.dataset.url, location.href).href;
+        domainLink.target = "_blank";
+        domainLink.rel = "noopener";
+        domainLink.title = domainLink.href;
+      } catch (err) { /* bad URL: leave Reddit's link */ }
+    }
 
     const parts = [];
     const sub = tagline.querySelector("a.subreddit");     // missing on a subreddit's own page

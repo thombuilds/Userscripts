@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube Tweaks (Podcasts page, player, compact Home)
-// @description  Separate "Podcasts" page in the sidebar, with a plain "Subscriptions" entry below it; trimmed player (no subtitles/AirPlay, highest quality up to 1440p, minimal settings menu, Picture-in-Picture button, "s" toggles a 1-hour sleep timer); SponsorBlock skipping ("u" undoes); compact Home grid.
-// @version      1.11.4
+// @description  Separate "Podcasts" page in the sidebar, between plain "Subscriptions" and "Watch later" entries; trimmed player (no subtitles/AirPlay, highest quality up to 1440p, minimal settings menu, Picture-in-Picture button, "s" toggles a 1-hour sleep timer); SponsorBlock skipping ("u" undoes); compact Home grid.
+// @version      1.12.0
 // @updateURL    https://raw.githubusercontent.com/thombuilds/Userscripts/main/youtube.user.js
 // @downloadURL  https://raw.githubusercontent.com/thombuilds/Userscripts/main/youtube.user.js
 // @match        https://www.youtube.com/*
@@ -21,7 +21,7 @@
  *   6. CLEANUP             – deletes the Home cache older versions saved (nothing is saved now)
  *   7. FETCHING            – background fetch of /feed/subscriptions and /, plus "load more"
  *   8. CSS                 – styles (uses YouTube's own CSS variables → dark/light for free)
- *   9. SIDEBAR ENTRY       – "Podcasts" (+ a plain "Subscriptions" below it) in the left guide + the mini-guide
+ *   9. SIDEBAR ENTRY       – Subscriptions / Podcasts / Watch later in the left guide, Podcasts in the mini-guide
  *  10. PODCASTS PAGE       – the overlay page, sections, tiles, buttons, toast
  *  11. NAVIGATION          – #podcasts hash, back/forward, YouTube SPA events
  *  12. PLAYER              – hide subtitles/AirPlay, force highest quality, trim the settings menu, PiP button
@@ -170,7 +170,7 @@
     debug: false,
   };
 
-  const VERSION = "1.11.4"; // keep in sync with @version; shown on the Podcasts page and in the console
+  const VERSION = "1.12.0"; // keep in sync with @version; shown on the Podcasts page and in the console
   const HASH = "#" + CONFIG.hash;
   const log = (...a) => CONFIG.debug && console.log("[YT Podcasts]", ...a);
 
@@ -238,6 +238,9 @@
   // Material "subscriptions" icon.
   const SUBS_ICON_PATH =
     "M20 8H4V6h16v2zm-2-6H6v2h12V2zm4 10v8c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2v-8c0-1.1.9-2 2-2h16c1.1 0 2 .9 2 2zm-6 4-6-3.27v6.53L16 16z";
+  // Material "watch_later" icon.
+  const WL_ICON_PATH =
+    "M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10 10-4.5 10-10S17.5 2 12 2zm4.2 14.2L11 13V7h1.5v5.2l4.5 2.7-.8 1.3z";
   const podcastIcon = () => svgIcon(PODCAST_ICON_PATH);
   function svgIcon(d) {
     const NS = "http://www.w3.org/2000/svg";
@@ -1167,44 +1170,51 @@
     if (radius && radius !== "0px") el.style.borderRadius = radius;
   }
 
-  function placeEntry(id, tag) {
-    const anchor = desiredAnchor(tag);
-    if (!anchor) return;
-    let el = document.getElementById(id);
-    if (!el) el = h("a", { id, class: id, href: HASH, title: "Podcasts" }, podcastIcon(), h("span", {}, "Podcasts"));
-    if (el.previousElementSibling !== anchor) anchor.after(el);
-    syncEntryBox(el, anchor);
+  const podcastEntry = (id) => h("a", { id, class: id, href: HASH, title: "Podcasts" }, podcastIcon(), h("span", {}, "Podcasts"));
+  const linkEntry = (id, href, title, iconPath) =>
+    h("a", { id, class: "ytpod-guide-entry ytpod-link-entry", href, title }, svgIcon(iconPath), h("span", {}, title));
+
+  /** Put els right after anchor, in this order (only moves what's out of place). */
+  function placeChain(anchor, els) {
+    let prev = anchor;
+    for (const el of els) {
+      if (prev.nextElementSibling !== el) prev.after(el);
+      syncEntryBox(el, anchor);
+      prev = el;
+    }
   }
 
   /**
-   * A plain "Subscriptions" link below Podcasts in the full guide: the current
-   * guide only has "Subscriptions >" as a heading over your channel list.
-   * Skipped when the guide still has a normal Subscriptions entry (Podcasts
-   * then sits right after it). The mini-guide always has its own.
+   * Full guide: Subscriptions, Podcasts, Watch later, after the anchor (the end
+   * of Home's group). The current guide only has "Subscriptions >" as a heading
+   * over your channel list, so we add a plain Subscriptions entry; when the
+   * guide has a normal Subscriptions entry it is the anchor, and ours is left out.
+   * Watch later is our own copy; YouTube's in the You section is hidden by CSS.
+   * Mini-guide: just Podcasts, after its Subscriptions.
    */
-  function placeSubsEntry() {
-    const pod = document.getElementById("ytpod-guide-entry");
-    let el = document.getElementById("ytpod-subs-entry");
-    if (!pod?.isConnected || pod.previousElementSibling?.querySelector('a[href^="/feed/subscriptions"]')) {
-      el?.remove();
-      return;
-    }
-    if (!el)
-      el = h("a", { id: "ytpod-subs-entry", class: "ytpod-guide-entry", href: "/feed/subscriptions", title: "Subscriptions" },
-        svgIcon(SUBS_ICON_PATH), h("span", {}, "Subscriptions"));
-    if (pod.nextElementSibling !== el) pod.after(el);
-    for (const k of ["marginLeft", "width", "height", "borderRadius"])
-      if (el.style[k] !== pod.style[k]) el.style[k] = pod.style[k];
-  }
-
   function ensureGuideEntries() {
-    placeEntry("ytpod-guide-entry", "ytd-guide-entry-renderer");
-    placeEntry("ytpod-mini-entry", "ytd-mini-guide-entry-renderer");
-    placeSubsEntry();
+    const anchor = desiredAnchor("ytd-guide-entry-renderer");
+    if (anchor) {
+      const pod = document.getElementById("ytpod-guide-entry") || podcastEntry("ytpod-guide-entry");
+      const wl = document.getElementById("ytpod-wl-entry") || linkEntry("ytpod-wl-entry", "/playlist?list=WL", "Watch later", WL_ICON_PATH);
+      let subs = document.getElementById("ytpod-subs-entry");
+      if (anchor.querySelector('a[href^="/feed/subscriptions"]')) {
+        subs?.remove();
+        subs = null;
+      } else {
+        subs ||= linkEntry("ytpod-subs-entry", "/feed/subscriptions", "Subscriptions", SUBS_ICON_PATH);
+      }
+      placeChain(anchor, [subs, pod, wl].filter(Boolean));
+    }
+    const mini = desiredAnchor("ytd-mini-guide-entry-renderer");
+    if (mini) placeChain(mini, [document.getElementById("ytpod-mini-entry") || podcastEntry("ytpod-mini-entry")]);
+
     for (const id of ["ytpod-guide-entry", "ytpod-mini-entry"])
       document.getElementById(id)?.classList.toggle("ytpod-active", state.open);
     document.getElementById("ytpod-subs-entry")?.classList.toggle("ytpod-active",
       !state.open && location.pathname.startsWith("/feed/subscriptions"));
+    document.getElementById("ytpod-wl-entry")?.classList.toggle("ytpod-active",
+      !state.open && location.pathname === "/playlist" && new URLSearchParams(location.search).get("list") === "WL");
   }
 
   /** If the guide is a pop-over drawer (narrow window / watch page), close it. UNSURE. */
@@ -1616,16 +1626,20 @@
     }
   }
 
-  /** Our "Subscriptions" entry: the Subscriptions feed, in the SPA if possible. UNSURE: rootVe. */
-  function openSubscriptions() {
-    const url = "/feed/subscriptions";
+  /** Our Subscriptions / Watch later entries: open the page in the SPA if possible. UNSURE: rootVe values. */
+  const LINK_ENDPOINTS = {
+    "ytpod-subs-entry": { url: "/feed/subscriptions", browseId: "FEsubscriptions", webPageType: "WEB_PAGE_TYPE_BROWSE", rootVe: 96368 },
+    "ytpod-wl-entry": { url: "/playlist?list=WL", browseId: "VLWL", webPageType: "WEB_PAGE_TYPE_PLAYLIST", rootVe: 5754 },
+  };
+  function openLinkEntry(id) {
+    const { url, browseId, webPageType, rootVe } = LINK_ENDPOINTS[id];
     const ok = spaNavigateTo({
-      commandMetadata: { webCommandMetadata: { url, webPageType: "WEB_PAGE_TYPE_BROWSE", rootVe: 96368 } },
-      browseEndpoint: { browseId: "FEsubscriptions" },
+      commandMetadata: { webCommandMetadata: { url, webPageType, rootVe } },
+      browseEndpoint: { browseId },
     });
     if (!ok) location.href = url;
     else setTimeout(() => {
-      if (!location.pathname.startsWith(url)) location.href = url;
+      if (location.pathname + location.search !== url) location.href = url;
     }, 1500);
   }
 
@@ -1661,7 +1675,8 @@
   document.addEventListener("click", (e) => {
     const target = e.target instanceof Element ? e.target : null;
     if (!target) return;
-    if (target.closest("#ytpod-subs-entry")) {
+    const linkEntryEl = target.closest(".ytpod-link-entry");
+    if (linkEntryEl) {
       if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey) return;
       e.preventDefault();
       e.stopPropagation();
@@ -1671,7 +1686,7 @@
         stripHash();
       }
       closeDrawerIfOverlay();
-      openSubscriptions();
+      openLinkEntry(linkEntryEl.id);
       return;
     }
     const ours = target.closest(".ytpod-guide-entry, .ytpod-mini-entry");
@@ -2514,9 +2529,12 @@
     "more from youtube": ['a[href*="music.youtube.com"]', 'a[href*="youtubekids.com"]', 'a[href^="/labs"]'],
   };
   function guideCss() {
+    // YouTube's own Watch later entry (ours sits below Podcasts). UNSURE: link format.
+    const wl = `
+      ytd-guide-entry-renderer:has(a[href^="/playlist?list=WL"]) { display: none !important; }`;
     const sels = (CONFIG.hideGuideSections || []).flatMap((t) => GUIDE_SECTION_LINKS[t.toLowerCase()] || []);
-    if (!sels.length) return "";
-    return `
+    if (!sels.length) return wl;
+    return wl + `
       ytd-guide-section-renderer:not(:has(#ytpod-guide-entry)):is(${sels.map((x) => `:has(${x})`).join(", ")}) { display: none !important; }`;
   }
 

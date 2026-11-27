@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube Tweaks (Podcasts page, player, compact Home)
-// @description  Separate "Podcasts" page in the sidebar; trimmed player (no subtitles/AirPlay, highest quality up to 1440p, minimal settings menu, Picture-in-Picture button, "s" toggles a 1-hour sleep timer); SponsorBlock skipping ("u" undoes); compact Home grid.
-// @version      1.10.2
+// @description  Separate "Podcasts" page in the sidebar, with a plain "Subscriptions" entry below it; trimmed player (no subtitles/AirPlay, highest quality up to 1440p, minimal settings menu, Picture-in-Picture button, "s" toggles a 1-hour sleep timer); SponsorBlock skipping ("u" undoes); compact Home grid.
+// @version      1.11.0
 // @updateURL    https://raw.githubusercontent.com/thombuilds/Userscripts/main/youtube.user.js
 // @downloadURL  https://raw.githubusercontent.com/thombuilds/Userscripts/main/youtube.user.js
 // @match        https://www.youtube.com/*
@@ -21,7 +21,7 @@
  *   6. CLEANUP             – deletes the Home cache older versions saved (nothing is saved now)
  *   7. FETCHING            – background fetch of /feed/subscriptions and /, plus "load more"
  *   8. CSS                 – styles (uses YouTube's own CSS variables → dark/light for free)
- *   9. SIDEBAR ENTRY       – "Podcasts" in the left guide + the collapsed mini-guide
+ *   9. SIDEBAR ENTRY       – "Podcasts" (+ a plain "Subscriptions" below it) in the left guide + the mini-guide
  *  10. PODCASTS PAGE       – the overlay page, sections, tiles, buttons, toast
  *  11. NAVIGATION          – #podcasts hash, back/forward, YouTube SPA events
  *  12. PLAYER              – hide subtitles/AirPlay, force highest quality, trim the settings menu, PiP button
@@ -166,7 +166,7 @@
     debug: false,
   };
 
-  const VERSION = "1.10.2"; // keep in sync with @version; shown on the Podcasts page and in the console
+  const VERSION = "1.11.0"; // keep in sync with @version; shown on the Podcasts page and in the console
   const HASH = "#" + CONFIG.hash;
   const log = (...a) => CONFIG.debug && console.log("[YT Podcasts]", ...a);
 
@@ -231,7 +231,11 @@
   // Material "podcasts" icon, drawn as an SVG (no innerHTML).
   const PODCAST_ICON_PATH =
     "M14 12c0 .74-.4 1.38-1 1.72V22h-2v-8.28c-.6-.35-1-.98-1-1.72 0-1.1.9-2 2-2s2 .9 2 2zm-2-6c-3.31 0-6 2.69-6 6 0 1.74.75 3.31 1.94 4.4l1.42-1.42C8.53 14.25 8 13.19 8 12c0-2.21 1.79-4 4-4s4 1.79 4 4c0 1.19-.53 2.25-1.36 2.98l1.42 1.42C17.25 15.31 18 13.74 18 12c0-3.31-2.69-6-6-6zm0-4C6.48 2 2 6.48 2 12c0 2.85 1.2 5.41 3.11 7.24l1.42-1.42C4.98 16.36 4 14.29 4 12c0-4.41 3.59-8 8-8s8 3.59 8 8c0 2.29-.98 4.36-2.53 5.82l1.42 1.42C20.8 17.41 22 14.85 22 12c0-5.52-4.48-10-10-10z";
-  function podcastIcon() {
+  // Material "subscriptions" icon.
+  const SUBS_ICON_PATH =
+    "M20 8H4V6h16v2zm-2-6H6v2h12V2zm4 10v8c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2v-8c0-1.1.9-2 2-2h16c1.1 0 2 .9 2 2zm-6 4-6-3.27v6.53L16 16z";
+  const podcastIcon = () => svgIcon(PODCAST_ICON_PATH);
+  function svgIcon(d) {
     const NS = "http://www.w3.org/2000/svg";
     const svg = document.createElementNS(NS, "svg");
     svg.setAttribute("viewBox", "0 0 24 24");
@@ -239,7 +243,7 @@
     svg.setAttribute("height", "24");
     svg.setAttribute("aria-hidden", "true");
     const path = document.createElementNS(NS, "path");
-    path.setAttribute("d", PODCAST_ICON_PATH);
+    path.setAttribute("d", d);
     svg.appendChild(path);
     return svg;
   }
@@ -1168,11 +1172,35 @@
     syncEntryBox(el, anchor);
   }
 
+  /**
+   * A plain "Subscriptions" link below Podcasts in the full guide: the current
+   * guide only has "Subscriptions >" as a heading over your channel list.
+   * Skipped when the guide still has a normal Subscriptions entry (Podcasts
+   * then sits right after it). The mini-guide always has its own.
+   */
+  function placeSubsEntry() {
+    const pod = document.getElementById("ytpod-guide-entry");
+    let el = document.getElementById("ytpod-subs-entry");
+    if (!pod?.isConnected || pod.previousElementSibling?.querySelector('a[href^="/feed/subscriptions"]')) {
+      el?.remove();
+      return;
+    }
+    if (!el)
+      el = h("a", { id: "ytpod-subs-entry", class: "ytpod-guide-entry", href: "/feed/subscriptions", title: "Subscriptions" },
+        svgIcon(SUBS_ICON_PATH), h("span", {}, "Subscriptions"));
+    if (pod.nextElementSibling !== el) pod.after(el);
+    for (const k of ["marginLeft", "width", "height", "borderRadius"])
+      if (el.style[k] !== pod.style[k]) el.style[k] = pod.style[k];
+  }
+
   function ensureGuideEntries() {
     placeEntry("ytpod-guide-entry", "ytd-guide-entry-renderer");
     placeEntry("ytpod-mini-entry", "ytd-mini-guide-entry-renderer");
+    placeSubsEntry();
     for (const id of ["ytpod-guide-entry", "ytpod-mini-entry"])
       document.getElementById(id)?.classList.toggle("ytpod-active", state.open);
+    document.getElementById("ytpod-subs-entry")?.classList.toggle("ytpod-active",
+      !state.open && location.pathname.startsWith("/feed/subscriptions"));
   }
 
   /** If the guide is a pop-over drawer (narrow window / watch page), close it. UNSURE. */
@@ -1567,23 +1595,34 @@
    * page world. UNSURE: event shape; this is what yt-simple-endpoint fires.
    */
   function spaNavigate(url, videoId) {
+    return spaNavigateTo({
+      commandMetadata: { webCommandMetadata: { url, webPageType: "WEB_PAGE_TYPE_WATCH", rootVe: 3832 } },
+      watchEndpoint: { videoId },
+    });
+  }
+
+  function spaNavigateTo(endpoint) {
     const app = document.querySelector("ytd-app");
     if (!app || !inPageWorld()) return false;
     try {
-      app.dispatchEvent(new CustomEvent("yt-navigate", {
-        bubbles: true,
-        composed: true,
-        detail: {
-          endpoint: {
-            commandMetadata: { webCommandMetadata: { url, webPageType: "WEB_PAGE_TYPE_WATCH", rootVe: 3832 } },
-            watchEndpoint: { videoId },
-          },
-        },
-      }));
+      app.dispatchEvent(new CustomEvent("yt-navigate", { bubbles: true, composed: true, detail: { endpoint } }));
       return true;
     } catch {
       return false;
     }
+  }
+
+  /** Our "Subscriptions" entry: the Subscriptions feed, in the SPA if possible. UNSURE: rootVe. */
+  function openSubscriptions() {
+    const url = "/feed/subscriptions";
+    const ok = spaNavigateTo({
+      commandMetadata: { webCommandMetadata: { url, webPageType: "WEB_PAGE_TYPE_BROWSE", rootVe: 96368 } },
+      browseEndpoint: { browseId: "FEsubscriptions" },
+    });
+    if (!ok) location.href = url;
+    else setTimeout(() => {
+      if (!location.pathname.startsWith(url)) location.href = url;
+    }, 1500);
   }
 
   function onHistoryChange() {
@@ -1618,6 +1657,19 @@
   document.addEventListener("click", (e) => {
     const target = e.target instanceof Element ? e.target : null;
     if (!target) return;
+    if (target.closest("#ytpod-subs-entry")) {
+      if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey) return;
+      e.preventDefault();
+      e.stopPropagation();
+      reopenUntil = 0;
+      if (state.open) {
+        closePodcasts({ restoreScroll: false });
+        stripHash();
+      }
+      closeDrawerIfOverlay();
+      openSubscriptions();
+      return;
+    }
     const ours = target.closest(".ytpod-guide-entry, .ytpod-mini-entry");
     if (ours) {
       if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey) return;

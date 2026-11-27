@@ -1,7 +1,7 @@
 /* ==UserStyle==
 @name         Reddit Tweaks – anti-flash
 @description  Companion to reddit.user.js: paints the background instantly and hides the page until the script's styles are in, so there's no flash of Reddit's own design.
-@version      1.1.1
+@version      1.1.2
 @match        https://old.reddit.com/*
 @match        https://www.reddit.com/*
 @match        https://reddit.com/*
@@ -25,23 +25,12 @@
  *      (the script adds the class "nw-styled" to <html>)
  *   3. safety net: if the script doesn't run, the page appears after 1.5s
  *
- * Keep the two colors in sync with --nw-bg in reddit.user.js.
+ * Keep the color in sync with the dark --nw-bg in reddit.user.js.
  */
 
-/* 1. Background color immediately – only until the script has styled the
- *    page (.nw-styled). A user style sheet's !important beats the script's,
- *    so leaving it on would replace the script's gradient with a flat color
- *    and ignore the light/dark toggle (data-nw-theme on <html>). */
-:root:has(link[href*="redditstatic.com"]):not(:has(shreddit-app)):not(.nw-styled) {
-  background: #e9ecf1 !important;          /* light --nw-bg */
-}
-@media (prefers-color-scheme: dark) {
-  :root:has(link[href*="redditstatic.com"]):not(:has(shreddit-app)):not(.nw-styled):not([data-nw-theme="light"]) {
-    background: #12141a !important;        /* dark --nw-bg */
-  }
-}
-:root:has(link[href*="redditstatic.com"]):not(:has(shreddit-app)):not(.nw-styled)[data-nw-theme="dark"] {
-  background: #12141a !important;
+/* 1. Background color immediately */
+:root:has(link[href*="redditstatic.com"]):not(:has(shreddit-app)) {
+  background: #12141a !important;          /* dark --nw-bg (always dark) */
 }
 
 /* 2 + 3. Hide content until the script's styles are in (max 1.5s) */

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube Tweaks (Podcasts page, player, compact Home)
 // @description  Separate "Podcasts" page in the sidebar, with a plain "Subscriptions" entry below it; trimmed player (no subtitles/AirPlay, highest quality up to 1440p, minimal settings menu, Picture-in-Picture button, "s" toggles a 1-hour sleep timer); SponsorBlock skipping ("u" undoes); compact Home grid.
-// @version      1.11.1
+// @version      1.11.2
 // @updateURL    https://raw.githubusercontent.com/thombuilds/Userscripts/main/youtube.user.js
 // @downloadURL  https://raw.githubusercontent.com/thombuilds/Userscripts/main/youtube.user.js
 // @match        https://www.youtube.com/*
@@ -170,7 +170,7 @@
     debug: false,
   };
 
-  const VERSION = "1.11.1"; // keep in sync with @version; shown on the Podcasts page and in the console
+  const VERSION = "1.11.2"; // keep in sync with @version; shown on the Podcasts page and in the console
   const HASH = "#" + CONFIG.hash;
   const log = (...a) => CONFIG.debug && console.log("[YT Podcasts]", ...a);
 
@@ -1107,7 +1107,7 @@
     if (document.getElementById("ytpod-style")) return;
     const style = document.createElement("style");
     style.id = "ytpod-style";
-    style.textContent = CSS + playerCss() + shortsCss() + gridCss(); // textContent on <style> is fine under Trusted Types
+    style.textContent = CSS + playerCss() + shortsCss() + gridCss() + guideCss(); // textContent on <style> is fine under Trusted Types
     (document.head || document.documentElement).appendChild(style);
   }
 
@@ -2485,15 +2485,36 @@
     }
   }
 
-  /** Sidebar sections listed in CONFIG.hideGuideSections, matched by their heading. UNSURE: heading element names. */
+  /**
+   * Sidebar sections listed in CONFIG.hideGuideSections.
+   * CSS (from the first paint, so they never flash): recognized by the links
+   * inside them, for the three default sections. JS (below): by heading text,
+   * for anything else you list. Never the section holding our Podcasts entry.
+   * UNSURE: links and element names.
+   */
+  const GUIDE_SECTION_LINKS = {
+    subscriptions: ['#header-entry a[href^="/feed/channels"]', '#header-entry a[href^="/feed/subscriptions"]', "#header-entry a[title=\"Subscriptions\"]"],
+    explore: ['a[href^="/feed/trending"]', 'a[href^="/gaming"]', 'a[href^="/feed/storefront"]', 'a[href^="/feed/explore"]', "#header-entry a[title=\"Explore\"]"],
+    "more from youtube": ['a[href*="studio.youtube.com"]', 'a[href*="music.youtube.com"]', 'a[href*="youtubekids.com"]', 'a[href^="/premium"]'],
+  };
+  function guideCss() {
+    const sels = (CONFIG.hideGuideSections || []).flatMap((t) => GUIDE_SECTION_LINKS[t.toLowerCase()] || []);
+    if (!sels.length) return "";
+    return `
+      ytd-guide-section-renderer:not(:has(#ytpod-guide-entry)):is(${sels.map((x) => `:has(${x})`).join(", ")}) { display: none !important; }`;
+  }
+
   function hideGuideSections() {
     const titles = (CONFIG.hideGuideSections || []).map((t) => t.toLowerCase());
     if (!titles.length) return;
+    const clean = (t) => (t || "").replace(/\s+/g, " ").trim().toLowerCase();
     for (const sec of document.querySelectorAll("ytd-guide-section-renderer")) {
       if (sec.classList.contains("ytpod-hide") || sec.querySelector("#ytpod-guide-entry")) continue;
-      const heading = sec.querySelector("#guide-section-title, #header-entry, h3");
-      const text = heading && (heading.textContent || "").replace(/\s+/g, " ").trim().toLowerCase();
-      if (text && titles.includes(text)) sec.classList.add("ytpod-hide");
+      // The heading may hold extra text (a tooltip, the ">" icon's label), so
+      // check each likely title element and link title on its own.
+      const candidates = [...sec.querySelectorAll("#guide-section-title, #header-entry .title, #header-entry yt-formatted-string, #header-entry a, h3")];
+      const hit = candidates.some((el) => titles.includes(clean(el.textContent)) || titles.includes(clean(el.getAttribute("title"))));
+      if (hit) sec.classList.add("ytpod-hide");
     }
   }
 

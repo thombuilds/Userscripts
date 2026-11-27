@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube Tweaks (Podcasts page, player, compact Home)
 // @description  Separate "Podcasts" page in the sidebar, between plain "Subscriptions" and "Watch later" / "History" / "Playlists" entries; trimmed player (no subtitles/AirPlay, highest quality up to 1440p, minimal settings menu, Picture-in-Picture button, "s" toggles a 1-hour sleep timer); SponsorBlock skipping ("u" undoes); compact Home grid.
-// @version      1.14.0
+// @version      1.14.1
 // @updateURL    https://raw.githubusercontent.com/thombuilds/Userscripts/main/youtube.user.js
 // @downloadURL  https://raw.githubusercontent.com/thombuilds/Userscripts/main/youtube.user.js
 // @match        https://www.youtube.com/*
@@ -170,7 +170,7 @@
     debug: false,
   };
 
-  const VERSION = "1.14.0"; // keep in sync with @version; shown on the Podcasts page and in the console
+  const VERSION = "1.14.1"; // keep in sync with @version; shown on the Podcasts page and in the console
   const HASH = "#" + CONFIG.hash;
   const log = (...a) => CONFIG.debug && console.log("[YT Podcasts]", ...a);
 
@@ -958,6 +958,10 @@
       --ytpod-blue:  var(--yt-spec-call-to-action, #3ea6ff);
     }
 
+    /* The full guide stays invisible until our entries are in it (see ensureGuideEntries),
+       so it doesn't draw once without them and then jump. Fallback: shown after 3 s (boot). */
+    html:not(.ytpod-guide-ready) ytd-guide-renderer { visibility: hidden !important; }
+
     /* ---- sidebar entry (full guide), sized like ytd-guide-entry-renderer ---- */
     .ytpod-guide-entry {
       display: flex; align-items: center; gap: 24px;
@@ -1223,6 +1227,7 @@
       if (hasSubs) document.getElementById(subsE.id)?.remove();
       const pod = document.getElementById("ytpod-guide-entry") || podcastEntry("ytpod-guide-entry");
       placeChain(anchor, [hasSubs ? null : linkEl(subsE), pod, ...rest.map(linkEl)].filter(Boolean));
+      document.documentElement.classList.add("ytpod-guide-ready");
     }
     const mini = desiredAnchor("ytd-mini-guide-entry-renderer");
     if (mini) placeChain(mini, [document.getElementById("ytpod-mini-entry") || podcastEntry("ytpod-mini-entry")]);
@@ -2733,9 +2738,23 @@
     ensureGuideEntries();
     // Skip changes inside a player (its clock ticks every second while playing);
     // the player has its own observer (watchPlayers).
+    // Sidebar changes (and anything while our entries aren't placed yet) also
+    // place the entries on the next frame, not after the 500 ms tick, so they
+    // appear together with YouTube's own.
+    let guideRaf = 0;
     new MutationObserver((muts) => {
-      if (muts.some((m) => !(m.target instanceof Element ? m.target : m.target.parentElement)?.closest(".html5-video-player"))) scheduleTick();
+      let tick = false;
+      let guide = !document.getElementById("ytpod-guide-entry")?.isConnected;
+      for (const m of muts) {
+        const el = m.target instanceof Element ? m.target : m.target.parentElement;
+        if (el?.closest(".html5-video-player")) continue;
+        tick = true;
+        if (!guide && el?.closest("ytd-guide-renderer, ytd-mini-guide-renderer")) guide = true;
+      }
+      if (tick) scheduleTick();
+      if (tick && guide && !guideRaf) guideRaf = requestAnimationFrame(() => { guideRaf = 0; ensureGuideEntries(); });
     }).observe(document.documentElement, { childList: true, subtree: true });
+    setTimeout(() => document.documentElement.classList.add("ytpod-guide-ready"), 3000); // never keep the guide hidden for good
     scheduleTick(); // first pass right away, not only after the next DOM change
     if (location.hash === HASH) {
       waitFor(() => document.querySelector("#page-manager"), 10000).then(() => openPodcasts({ push: false }));

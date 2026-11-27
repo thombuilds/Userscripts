@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube Tweaks (Podcasts page, player, compact Home)
 // @description  Separate "Podcasts" page in the sidebar, with a plain "Subscriptions" entry below it; trimmed player (no subtitles/AirPlay, highest quality up to 1440p, minimal settings menu, Picture-in-Picture button, "s" toggles a 1-hour sleep timer); SponsorBlock skipping ("u" undoes); compact Home grid.
-// @version      1.11.0
+// @version      1.11.1
 // @updateURL    https://raw.githubusercontent.com/thombuilds/Userscripts/main/youtube.user.js
 // @downloadURL  https://raw.githubusercontent.com/thombuilds/Userscripts/main/youtube.user.js
 // @match        https://www.youtube.com/*
@@ -152,6 +152,10 @@
     // Shelves (sections with a heading, e.g. "Most relevant" on Subscriptions)
     // to hide, by their title as written in YouTube's UI language.
     hideShelves: ["Most relevant"],
+    // Left sidebar sections to hide, by their heading as written in YouTube's UI
+    // language ("Subscriptions" = the list of your channels; the plain
+    // Subscriptions entry below Podcasts stays).
+    hideGuideSections: ["Subscriptions", "Explore", "More from YouTube"],
 
     // ---- Grids (Home, Subscriptions, channel pages, and our Podcasts page) ----
     // Every video grid shows tilesPerRow tiles per row. In a narrow window it
@@ -166,7 +170,7 @@
     debug: false,
   };
 
-  const VERSION = "1.11.0"; // keep in sync with @version; shown on the Podcasts page and in the console
+  const VERSION = "1.11.1"; // keep in sync with @version; shown on the Podcasts page and in the console
   const HASH = "#" + CONFIG.hash;
   const log = (...a) => CONFIG.debug && console.log("[YT Podcasts]", ...a);
 
@@ -2481,6 +2485,18 @@
     }
   }
 
+  /** Sidebar sections listed in CONFIG.hideGuideSections, matched by their heading. UNSURE: heading element names. */
+  function hideGuideSections() {
+    const titles = (CONFIG.hideGuideSections || []).map((t) => t.toLowerCase());
+    if (!titles.length) return;
+    for (const sec of document.querySelectorAll("ytd-guide-section-renderer")) {
+      if (sec.classList.contains("ytpod-hide") || sec.querySelector("#ytpod-guide-entry")) continue;
+      const heading = sec.querySelector("#guide-section-title, #header-entry, h3");
+      const text = heading && (heading.textContent || "").replace(/\s+/g, " ").trim().toLowerCase();
+      if (text && titles.includes(text)) sec.classList.add("ytpod-hide");
+    }
+  }
+
   const shortsId = (path) => (/^\/shorts\/([\w-]{6,})/.exec(path) || [])[1];
 
   /** On a /shorts/ page → the same video in the normal player. */
@@ -2633,6 +2649,7 @@
       watchGrids();
       hideShortsByText();
       hideShelvesByTitle();
+      hideGuideSections();
       compactSidebar();
       sbSync();
       if (state.open) mountPage(); // in case YouTube rebuilt #page-manager

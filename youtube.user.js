@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube Tweaks (Podcasts page, player, compact Home)
 // @description  Separate "Podcasts" page in the sidebar, with a plain "Subscriptions" entry below it; trimmed player (no subtitles/AirPlay, highest quality up to 1440p, minimal settings menu, Picture-in-Picture button, "s" toggles a 1-hour sleep timer); SponsorBlock skipping ("u" undoes); compact Home grid.
-// @version      1.11.3
+// @version      1.11.4
 // @updateURL    https://raw.githubusercontent.com/thombuilds/Userscripts/main/youtube.user.js
 // @downloadURL  https://raw.githubusercontent.com/thombuilds/Userscripts/main/youtube.user.js
 // @match        https://www.youtube.com/*
@@ -170,7 +170,7 @@
     debug: false,
   };
 
-  const VERSION = "1.11.3"; // keep in sync with @version; shown on the Podcasts page and in the console
+  const VERSION = "1.11.4"; // keep in sync with @version; shown on the Podcasts page and in the console
   const HASH = "#" + CONFIG.hash;
   const log = (...a) => CONFIG.debug && console.log("[YT Podcasts]", ...a);
 
@@ -1107,7 +1107,7 @@
     if (document.getElementById("ytpod-style")) return;
     const style = document.createElement("style");
     style.id = "ytpod-style";
-    style.textContent = CSS + playerCss() + shortsCss() + gridCss() + guideCss(); // textContent on <style> is fine under Trusted Types
+    style.textContent = CSS + playerCss() + shortsCss() + gridCss() + guideCss() + shelfHoldCss(); // textContent on <style> is fine under Trusted Types
     (document.head || document.documentElement).appendChild(style);
   }
 
@@ -2473,17 +2473,32 @@
     }
   }
 
-  /** Shelves listed in CONFIG.hideShelves, matched by their heading text. */
+  /**
+   * Shelves listed in CONFIG.hideShelves, matched by their heading text.
+   * On Subscriptions, CSS (shelfHoldCss) keeps every shelf hidden until this
+   * has checked it, so "Most relevant" never flashes. A shelf whose heading
+   * hasn't rendered yet stays held; one with no heading at all is let through
+   * after 2 s.
+   */
   function hideShelvesByTitle() {
     if (!CONFIG.hideShelves.length) return;
     const titles = CONFIG.hideShelves.map((t) => t.toLowerCase());
+    const now = Date.now();
+    let pending = false;
     for (const sec of document.querySelectorAll("ytd-rich-section-renderer, ytd-shelf-renderer")) {
-      if (sec.classList.contains("ytpod-hide")) continue;
+      if (sec.classList.contains("ytpod-hide") || sec.dataset.ytpodShelf) continue;
       const heading = sec.querySelector("#title, h2, [role='heading']");
       const text = heading && (heading.textContent || "").replace(/\s+/g, " ").trim().toLowerCase();
       if (text && titles.includes(text)) sec.classList.add("ytpod-hide");
+      else if (text || now - (sec.ytpodSeen ||= now) > 2000) sec.dataset.ytpodShelf = "ok";
+      else pending = true;
     }
+    if (pending) setTimeout(scheduleTick, 2100); // let a heading-less shelf through even if nothing else changes
   }
+
+  // UNSURE: page-subtype attribute.
+  const shelfHoldCss = () => CONFIG.hideShelves.length ? `
+      ytd-browse[page-subtype="subscriptions"] :is(ytd-rich-section-renderer, ytd-shelf-renderer):not([data-ytpod-shelf]) { display: none !important; }` : "";
 
   /**
    * Sidebar sections listed in CONFIG.hideGuideSections.

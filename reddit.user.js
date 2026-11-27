@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Reddit Tweaks (Narwhal-style old.reddit)
 // @description  Restyles old.reddit.com into a clean, minimal, app-like layout.
-// @version      1.4.4
+// @version      1.5.0
 // @updateURL    https://raw.githubusercontent.com/thombuilds/Userscripts/main/reddit.user.js
 // @downloadURL  https://raw.githubusercontent.com/thombuilds/Userscripts/main/reddit.user.js
 // @match        https://old.reddit.com/*
@@ -17,6 +17,7 @@
 /*
  * HOW THIS FILE IS ORGANIZED
  *   0. ANTI-FLASH          – tiny style that runs first (no white flash / fades)
+ *                            + light/dark choice (header toggle, 3h)
  *   1. CONFIG / COLORS     – the knobs you'll want to tweak
  *   2. CSS                 – injected immediately (document-start) so there's no white flash
  *   3. PAGE BEHAVIOR       – runs once the DOM is ready:
@@ -47,13 +48,32 @@
    * while the page loads, so nothing visibly fades from Reddit's white to
    * our colors. Removed again once the page has finished loading.
    * -------------------------------------------------------------------- */
+  // Light/dark: follows macOS unless you pick the other one with the header
+  // toggle (3h). The choice is kept in localStorage ("light" / "dark"; none =
+  // follow the system) and set as <html data-nw-theme="…">, so the CSS can
+  // use it. Applied here, first, so the page never flashes the wrong colors.
+  const THEME_KEY = "nw-theme";
+  const systemDark = window.matchMedia("(prefers-color-scheme: dark)");
+  function applyTheme() {
+    let theme = null;
+    try { theme = localStorage.getItem(THEME_KEY); } catch (err) { /* blocked */ }
+    if (theme === "light" || theme === "dark") document.documentElement.dataset.nwTheme = theme;
+    else delete document.documentElement.dataset.nwTheme;
+  }
+  const themeIsDark = () => {
+    const t = document.documentElement.dataset.nwTheme;
+    return t ? t === "dark" : systemDark.matches;
+  };
+  applyTheme();
+
   const earlyStyle = document.createElement("style");
   earlyStyle.id = "nw-early";
   earlyStyle.textContent = `
     html, body { background: #e9ecf1 !important; }
     @media (prefers-color-scheme: dark) {
-      html, body { background: #12141a !important; }
+      html:not([data-nw-theme="light"]), html:not([data-nw-theme="light"]) body { background: #12141a !important; }
     }
+    html[data-nw-theme="dark"], html[data-nw-theme="dark"] body { background: #12141a !important; }
     *, *::before, *::after { transition: none !important; }
   `;
   (document.head || document.documentElement).appendChild(earlyStyle);
@@ -116,6 +136,8 @@
 
   // True when this page is running inside the split view's right pane.
   const IN_PANE = window.top !== window.self;
+  // Theme picked in another tab / the main page: follow it here too.
+  window.addEventListener("storage", (e) => { if (e.key === THEME_KEY) applyTheme(); });
   if (IN_PANE) document.documentElement.classList.add("nw-in-pane");
 
   // Old Reddit refuses to send any request (comment save, votes, save…)
@@ -292,34 +314,41 @@
       color-scheme: light;
     }
 
-    /* Dark set: used automatically when macOS is in Dark Mode. */
+  `;
+
+  // Dark set: used when macOS is in Dark Mode (unless you picked light with
+  // the header toggle), or when you picked dark.
+  const DARK_VARS = `
+      --nw-bg:          #12141a;
+      --nw-bg-gradient: linear-gradient(160deg, #0f1115 0%, #161920 45%, #1c2029 100%);
+      --nw-card:        rgba(32, 36, 45, 0.72);
+      --nw-card-hover:  rgba(40, 45, 56, 0.92);
+      --nw-glass-edge:  rgba(255, 255, 255, 0.06);
+      --nw-shadow:       0 1px 2px rgba(0, 0, 0, 0.30), 0 4px 14px rgba(0, 0, 0, 0.25);
+      --nw-shadow-hover: 0 2px 4px rgba(0, 0, 0, 0.35), 0 8px 24px rgba(0, 0, 0, 0.35);
+      --nw-separator:   rgba(255, 255, 255, 0.08);
+      --nw-text:        #e6e8ee;
+      --nw-text-muted:  #9aa3b2;
+      --nw-text-faint:  #5f6878;
+      --nw-accent:      #7c8cff;
+      --nw-visited:     #7d8597;
+      --nw-input-bg:    rgba(255, 255, 255, 0.06);
+      --nw-fill:        rgba(255, 255, 255, 0.07);
+      --nw-header-bg:   rgba(15, 17, 21, 0.72);
+      --nw-sidebar-bg:  rgba(24, 27, 34, 0.60);
+      --nw-green:       #4ade80;
+      --nw-red:         #ff6b6b;
+      --nw-upvote:      #ff8a3d;
+      --nw-downvote:    #8f9cff;
+      --nw-depth-1: #7c8cff;
+      color-scheme: dark;
+  `;
+  const THEME_CSS = `
+    ${THEME_VARS}
     @media (prefers-color-scheme: dark) {
-      :root {
-        --nw-bg:          #12141a;
-        --nw-bg-gradient: linear-gradient(160deg, #0f1115 0%, #161920 45%, #1c2029 100%);
-        --nw-card:        rgba(32, 36, 45, 0.72);
-        --nw-card-hover:  rgba(40, 45, 56, 0.92);
-        --nw-glass-edge:  rgba(255, 255, 255, 0.06);
-        --nw-shadow:       0 1px 2px rgba(0, 0, 0, 0.30), 0 4px 14px rgba(0, 0, 0, 0.25);
-        --nw-shadow-hover: 0 2px 4px rgba(0, 0, 0, 0.35), 0 8px 24px rgba(0, 0, 0, 0.35);
-        --nw-separator:   rgba(255, 255, 255, 0.08);
-        --nw-text:        #e6e8ee;
-        --nw-text-muted:  #9aa3b2;
-        --nw-text-faint:  #5f6878;
-        --nw-accent:      #7c8cff;
-        --nw-visited:     #7d8597;
-        --nw-input-bg:    rgba(255, 255, 255, 0.06);
-        --nw-fill:        rgba(255, 255, 255, 0.07);
-        --nw-header-bg:   rgba(15, 17, 21, 0.72);
-        --nw-sidebar-bg:  rgba(24, 27, 34, 0.60);
-        --nw-green:       #4ade80;
-        --nw-red:         #ff6b6b;
-        --nw-upvote:      #ff8a3d;
-        --nw-downvote:    #8f9cff;
-        --nw-depth-1: #7c8cff;
-        color-scheme: dark;
-      }
+      :root:not([data-nw-theme="light"]) {${DARK_VARS}    }
     }
+    :root[data-nw-theme="dark"] {${DARK_VARS}    }
   `;
 
   // Small line icons for the share / save / hide / report buttons (3j)
@@ -355,6 +384,8 @@
     prefs: svgIcon("<path d='M4 6h9'/><path d='M19 6h1'/><circle cx='16' cy='6' r='2.5'/><path d='M4 12h2'/><path d='M12 12h8'/><circle cx='9' cy='12' r='2.5'/><path d='M4 18h11'/><circle cx='18' cy='18' r='2.5'/>"),
     logout: svgIcon("<path d='M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4'/><path d='M16 17l5-5-5-5'/><path d='M21 12H9'/>"),
     chevron: svgIcon("<path d='M6 9l6 6 6-6'/>"),
+    sun: svgIcon("<circle cx='12' cy='12' r='4'/><path d='M12 2v2'/><path d='M12 20v2'/><path d='M4.9 4.9l1.4 1.4'/><path d='M17.7 17.7l1.4 1.4'/><path d='M2 12h2'/><path d='M20 12h2'/><path d='M4.9 19.1l1.4-1.4'/><path d='M17.7 6.3l1.4-1.4'/>"),
+    moon: svgIcon("<path d='M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z'/>"),
   };
 
   /* ======================================================================
@@ -362,7 +393,7 @@
    * ==================================================================== */
 
   const CSS = `
-    ${THEME_VARS}
+    ${THEME_CSS}
 
     /* ---------- 2.1 Base page ---------------------------------------- */
     html {
@@ -441,7 +472,7 @@
       display: grid !important;
       grid-template-columns: auto minmax(0, max-content) auto minmax(0, 1fr) auto;
       grid-template-areas:
-        "home name star . user"
+        "home name star theme user"
         "home tabs tabs tabs tabs";
       align-items: center;
       gap: 8px 10px;
@@ -450,6 +481,7 @@
     #header-bottom-left > .nw-home        { grid-area: home; }
     #header-bottom-left > .pagename       { grid-area: name; min-width: 0; }
     #header-bottom-left > .nw-fav-toggle  { grid-area: star; }
+    #header-bottom-left > .nw-theme-toggle { grid-area: theme; justify-self: end; }
     #header-bottom-left > .nw-user        { grid-area: user; justify-self: end; }
     #header-bottom-left > .tabmenu        { grid-area: tabs; justify-self: start; max-width: 100%; box-sizing: border-box; }
     /* More tabs than fit: scroll sideways instead of running off the edge */
@@ -508,6 +540,8 @@
     .nw-hbtn-modmail { --nw-icon: ${ICONS.modmail}; }
     .nw-hbtn-chat    { --nw-icon: ${ICONS.chat}; }
     .nw-hbtn-bell    { --nw-icon: ${ICONS.bell}; }
+    .nw-theme-toggle { --nw-icon: ${ICONS.moon}; }                 /* in light: "go dark" */
+    .nw-theme-toggle.nw-is-dark { --nw-icon: ${ICONS.sun}; }      /* in dark: "go light" */
     /* A link we don't recognise: Reddit's own icon, in the same round button */
     .nw-hbtn-raw::before { display: none; }
     .nw-hbtn-raw > a { display: block; margin: 0 !important; }
@@ -2491,14 +2525,44 @@
       loadSubIcons(new Map([[sub.toLowerCase(), avatar]]));
     }
 
+    setupThemeToggle(headerLeft);
     setupUserBar(headerLeft);
 
     // Everything else Reddit keeps in this row (its logo link, spacers) is
     // already hidden or empty, but would still take a grid cell: drop it.
-    const keep = ".nw-home, .pagename, .nw-fav-toggle, .tabmenu, .nw-user";
+    const keep = ".nw-home, .pagename, .nw-fav-toggle, .nw-theme-toggle, .tabmenu, .nw-user";
     [...headerLeft.children].forEach((el) => {
       if (!el.matches(keep)) el.classList.add("nw-gone");
     });
+  }
+
+  // Sun/moon button: switches to the other theme. If that's the one macOS is
+  // using anyway, the saved choice is cleared, so the page follows the system
+  // again. Other tabs (and the split-view pane) follow along via "storage".
+  function setupThemeToggle(headerLeft) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "nw-hbtn nw-theme-toggle";
+    const render = () => {
+      const dark = themeIsDark();
+      btn.classList.toggle("nw-is-dark", dark);
+      btn.title = dark ? "Switch to light mode" : "Switch to dark mode";
+      btn.setAttribute("aria-label", btn.title);
+    };
+    btn.addEventListener("click", () => {
+      const wantDark = !themeIsDark();
+      try {
+        if (wantDark === systemDark.matches) localStorage.removeItem(THEME_KEY);
+        else localStorage.setItem(THEME_KEY, wantDark ? "dark" : "light");
+      } catch (err) { /* blocked: still switch this page */ }
+      if (wantDark === systemDark.matches) delete document.documentElement.dataset.nwTheme;
+      else document.documentElement.dataset.nwTheme = wantDark ? "dark" : "light";
+      render();
+    });
+    window.addEventListener("storage", (e) => { if (e.key === THEME_KEY) render(); });
+    systemDark.addEventListener("change", render);
+    render();
+    headerLeft.appendChild(btn);
   }
 
   // Which of our icons a link in Reddit's user box gets (by id or address),

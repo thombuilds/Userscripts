@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Reddit Tweaks (Narwhal-style old.reddit)
 // @description  Restyles old.reddit.com into a clean, minimal, app-like layout.
-// @version      1.5.1
+// @version      1.5.2
 // @updateURL    https://raw.githubusercontent.com/thombuilds/Userscripts/main/reddit.user.js
 // @downloadURL  https://raw.githubusercontent.com/thombuilds/Userscripts/main/reddit.user.js
 // @match        https://old.reddit.com/*
@@ -1628,6 +1628,14 @@
     const comments = entry.querySelector(".buttons a.comments");
 
     if (sub) parts.push(sub.cloneNode(true));
+    else if (post.dataset.subreddit) {
+      // On a subreddit's own page Reddit leaves the link out: make our own.
+      const s = document.createElement("a");
+      s.className = "subreddit hover";
+      s.href = `/r/${post.dataset.subreddit}/`;
+      s.textContent = `r/${post.dataset.subreddit}`;
+      parts.push(s);
+    }
     const from = crosspostSourceOf(post);
     if (from) {
       // Crosspost: where the original lives, as an accent pill.

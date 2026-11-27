@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Reddit Tweaks (Narwhal-style old.reddit)
 // @description  Restyles old.reddit.com into a clean, minimal, app-like layout.
-// @version      1.5.4
+// @version      1.5.5
 // @updateURL    https://raw.githubusercontent.com/thombuilds/Userscripts/main/reddit.user.js
 // @downloadURL  https://raw.githubusercontent.com/thombuilds/Userscripts/main/reddit.user.js
 // @match        https://old.reddit.com/*
@@ -730,23 +730,40 @@
     /* ---------- 2.6 Metadata line ------------------------------------ */
     /* Our own line, built by JS (section 3b). Until JS runs, Reddit's
        original tagline stays visible as a fallback.
-       One flex row that never wraps:
-       [expand] r/sub · 3h · 12 comments ............ [save] [⋯]
-       Only the subreddit name shrinks (with an ellipsis) when space is tight. */
+       Two groups that share one row while they fit:
+       [expand] r/sub  ·  3h · 12 comments ......... [save] [⋯]
+       \_ head ______/  \_ rest __________________________________/
+       In a narrow card the rest drops to its own line below, so the
+       subreddit name gets the whole first line. Only if the name alone is
+       too long does it shrink (with an ellipsis).
+       The rest's leading "·" is drawn in the 14px to its left; the row is
+       shifted 14px left and that strip clipped, so a "·" at the start of a
+       wrapped line is cut away while one after the head stays visible. */
     .nw-meta {
+      --nw-sep-w: 14px;
       display: flex;
       align-items: center;
-      flex-wrap: nowrap;
+      flex-wrap: wrap;
+      row-gap: 4px;
       min-width: 0;
-      margin: 4px 0 0;
+      margin: 4px 0 0 calc(-1 * var(--nw-sep-w));
+      clip-path: inset(-6px -6px -6px var(--nw-sep-w));
       padding: 0;
       font-size: 12px;
       line-height: 16px;
       white-space: nowrap;
       color: var(--nw-text-muted);
     }
+    .nw-mg { display: flex; align-items: center; min-width: 0; }
+    .nw-meta-head { flex: 0 1 auto; padding-left: var(--nw-sep-w); }
+    .nw-meta-rest { flex: 1 0 auto; }
+    .nw-meta .nw-meta-rest > span.nw-sep:first-child {
+      width: var(--nw-sep-w);
+      margin: 0 !important;
+      text-align: center;
+    }
     /* Text items: identical size/line-height, no stray spacing from Reddit. */
-    .nw-meta > :is(a, time, span.nw-sep) {
+    .nw-meta .nw-mg > :is(a, time, span.nw-sep) {
       flex: 0 0 auto;
       font-size: inherit !important;
       line-height: inherit !important;
@@ -757,18 +774,18 @@
       float: none !important;
       white-space: nowrap !important;
     }
-    .nw-meta > a, .nw-meta > time { color: var(--nw-text-muted) !important; }
-    .nw-meta > a:hover { color: var(--nw-accent) !important; }
-    .nw-meta > a.subreddit {
+    .nw-meta .nw-mg > a, .nw-meta .nw-mg > time { color: var(--nw-text-muted) !important; }
+    .nw-meta .nw-mg > a:hover { color: var(--nw-accent) !important; }
+    .nw-meta .nw-mg > a.subreddit {
       flex: 0 1 auto;          /* the only item allowed to shrink */
       min-width: 0;
       overflow: hidden;
       text-overflow: ellipsis;
       font-weight: 600;
     }
-    .nw-meta > span.nw-sep { margin: 0 5px !important; color: var(--nw-text-faint); }
+    .nw-meta .nw-mg > span.nw-sep { margin: 0 5px !important; color: var(--nw-text-faint); }
     /* Crosspost source: "⇄ r/original" pill (JS 3b) */
-    .nw-meta > a.nw-xpost {
+    .nw-meta .nw-mg > a.nw-xpost {
       flex: 0 1 auto;
       min-width: 0;
       overflow: hidden;
@@ -782,7 +799,7 @@
       color: var(--nw-accent) !important;
       font-weight: 600;
     }
-    .nw-meta > a.nw-xpost::before {
+    .nw-meta .nw-mg > a.nw-xpost::before {
       content: "";
       flex: none;
       width: 11px; height: 11px;
@@ -791,7 +808,7 @@
       mask: ${ICONS.crosspost} center / contain no-repeat;
     }
     /* Reddit's expand button, moved to the start of the row (JS 3b). */
-    .nw-meta > .expando-button {
+    .nw-meta .nw-mg > .expando-button {
       flex: 0 0 auto;
       float: none !important;
       width: 18px !important;
@@ -799,7 +816,7 @@
       margin: -1px 6px -1px 0 !important;   /* takes 16px of row height */
       border-radius: 6px;
     }
-    .nw-meta > .expando-button::before { width: 11px; height: 11px; }
+    .nw-meta .nw-mg > .expando-button::before { width: 11px; height: 11px; }
 
     .thing.link.nw-meta-ready > .entry .tagline { display: none !important; }
     .thing.link.nw-meta-ready .buttons li.first { display: none !important; }
@@ -1636,7 +1653,7 @@
       } catch (err) { /* bad URL: leave Reddit's link */ }
     }
 
-    const parts = [];
+    const parts = [];   // head: subreddit (+ crosspost source)
     const sub = tagline.querySelector("a.subreddit");     // missing on a subreddit's own page
     const time = tagline.querySelector("time");
     const author = tagline.querySelector("a.author");
@@ -1663,34 +1680,43 @@
       // Also labels the expanded preview (CSS 2.6, .crosspost-preview::before).
       post.style.setProperty("--nw-xpost-from", `"Original post in r/${from}"`);
     }
+    const rest = [];    // time · author · comments
     if (time) {
       const t = time.cloneNode(true);
       // Drop "live-timestamp" so Reddit's timer doesn't rewrite it to "3 hours ago".
       t.classList.remove("live-timestamp");
       const short = shortTime(t.getAttribute("datetime"));
       if (short) t.textContent = short;   // full date stays in the hover tooltip
-      parts.push(t);
+      rest.push(t);
     }
-    if (CONFIG.showAuthorInMeta && author) parts.push(author.cloneNode(true));
+    if (CONFIG.showAuthorInMeta && author) rest.push(author.cloneNode(true));
     if (comments) {
       const c = comments.cloneNode(true);
       c.textContent = shortComments(comments.textContent);
-      parts.push(c);
+      rest.push(c);
     }
-    if (!parts.length) return;
+    if (!parts.length && !rest.length) return;
 
+    const group = (cls, nodes, leadingSep) => {
+      const g = document.createElement("span");
+      g.className = `nw-mg ${cls}`;
+      nodes.forEach((node, i) => {
+        if (i > 0 || leadingSep) {
+          const sep = document.createElement("span");
+          sep.className = "nw-sep";
+          sep.textContent = "·";
+          g.appendChild(sep);
+        }
+        node.removeAttribute("id"); // avoid duplicate IDs
+        g.appendChild(node);
+      });
+      return g;
+    };
     const meta = document.createElement("div");
     meta.className = "nw-meta";
-    parts.forEach((node, i) => {
-      if (i > 0) {
-        const sep = document.createElement("span");
-        sep.className = "nw-sep";
-        sep.textContent = "·";
-        meta.appendChild(sep);
-      }
-      node.removeAttribute("id"); // avoid duplicate IDs
-      meta.appendChild(node);
-    });
+    const head = group("nw-meta-head", parts, false);
+    const tail = group("nw-meta-rest", rest, parts.length > 0);
+    meta.append(head, tail);
 
     // Style Reddit's own vote column (left side) as a pill. It stays where
     // Reddit put it, so voting works exactly as before.
@@ -1701,11 +1727,11 @@
     // row so everything shares one line. It stays inside the same post, so
     // Reddit's expand code still finds it.
     const expando = tagline.previousElementSibling;
-    if (expando && expando.classList.contains("expando-button")) meta.prepend(expando);
+    if (expando && expando.classList.contains("expando-button")) head.prepend(expando);
 
     // Save + "⋯" at the right end. Not on the post's own page, where
     // Reddit's full action row (edit, delete, nsfw…) stays visible.
-    if (!document.body.classList.contains("comments-page")) addActions(post, meta);
+    if (!document.body.classList.contains("comments-page")) addActions(post, tail);
 
     tagline.after(meta);
     post.classList.add("nw-meta-ready"); // CSS now hides the original tagline

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube Tweaks (Podcasts page, player, compact Home)
 // @description  Separate "Podcasts" page in the sidebar, between plain "Subscriptions" and "Watch later" / "History" / "Playlists" entries; trimmed player (no subtitles/AirPlay, highest quality up to 1440p, minimal settings menu, Picture-in-Picture button, "s" toggles a 1-hour sleep timer); SponsorBlock skipping ("u" undoes); compact Home grid.
-// @version      1.14.1
+// @version      1.14.2
 // @updateURL    https://raw.githubusercontent.com/thombuilds/Userscripts/main/youtube.user.js
 // @downloadURL  https://raw.githubusercontent.com/thombuilds/Userscripts/main/youtube.user.js
 // @match        https://www.youtube.com/*
@@ -155,7 +155,12 @@
     // Left sidebar sections to hide, by their heading as written in YouTube's UI
     // language ("Subscriptions" = the list of your channels; the plain
     // Subscriptions entry below Podcasts stays).
-    hideGuideSections: ["Subscriptions", "Explore", "More from YouTube"],
+    // "You" = Your channel, Liked videos, Your videos…; "Report history" is the
+    // section with just that entry. (Watch later, History and Playlists are
+    // shown below Podcasts instead.)
+    hideGuideSections: ["Subscriptions", "You", "Explore", "More from YouTube", "Report history"],
+    // The links under the sidebar (About, Press, Copyright… © Google LLC).
+    hideGuideFooter: true,
 
     // ---- Grids (Home, Subscriptions, channel pages, and our Podcasts page) ----
     // Every video grid shows tilesPerRow tiles per row. In a narrow window it
@@ -170,7 +175,7 @@
     debug: false,
   };
 
-  const VERSION = "1.14.1"; // keep in sync with @version; shown on the Podcasts page and in the console
+  const VERSION = "1.14.2"; // keep in sync with @version; shown on the Podcasts page and in the console
   const HASH = "#" + CONFIG.hash;
   const log = (...a) => CONFIG.debug && console.log("[YT Podcasts]", ...a);
 
@@ -2544,14 +2549,19 @@
     explore: ['a[href^="/feed/trending"]', 'a[href^="/gaming"]', 'a[href^="/feed/storefront"]', 'a[href^="/feed/explore"]', "#header-entry a[title=\"Explore\"]"],
     // Not studio.youtube.com: "Your videos" in the You section links there too.
     "more from youtube": ['a[href*="music.youtube.com"]', 'a[href*="youtubekids.com"]', 'a[href^="/labs"]'],
+    you: ['a[href^="/feed/you"]'],
+    "report history": ['a[href^="/reporthistory"]'],
   };
   function guideCss() {
     // YouTube's own Watch later / History / Playlists entries (ours sit below Podcasts). UNSURE: link format.
-    const wl = `
+    let wl = `
       ytd-guide-entry-renderer:has(a[href^="/playlist?list=WL"]),
       ytd-guide-entry-renderer:has(a[href^="/feed/history"]),
       ytd-guide-entry-renderer:has(a[href^="/feed/playlists"]) { display: none !important; }`;
     const sels = (CONFIG.hideGuideSections || []).flatMap((t) => GUIDE_SECTION_LINKS[t.toLowerCase()] || []);
+    // UNSURE: footer id.
+    if (CONFIG.hideGuideFooter) wl += `
+      ytd-guide-renderer #footer { display: none !important; }`;
     if (!sels.length) return wl;
     return wl + `
       ytd-guide-section-renderer:not(:has(#ytpod-guide-entry)):is(${sels.map((x) => `:has(${x})`).join(", ")}) { display: none !important; }`;

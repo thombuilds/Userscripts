@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube Tweaks (Podcasts page, player, compact Home)
 // @description  Separate "Podcasts" page in the sidebar, with a plain "Subscriptions" entry below it; trimmed player (no subtitles/AirPlay, highest quality up to 1440p, minimal settings menu, Picture-in-Picture button, "s" toggles a 1-hour sleep timer); SponsorBlock skipping ("u" undoes); compact Home grid.
-// @version      1.11.2
+// @version      1.11.3
 // @updateURL    https://raw.githubusercontent.com/thombuilds/Userscripts/main/youtube.user.js
 // @downloadURL  https://raw.githubusercontent.com/thombuilds/Userscripts/main/youtube.user.js
 // @match        https://www.youtube.com/*
@@ -170,7 +170,7 @@
     debug: false,
   };
 
-  const VERSION = "1.11.2"; // keep in sync with @version; shown on the Podcasts page and in the console
+  const VERSION = "1.11.3"; // keep in sync with @version; shown on the Podcasts page and in the console
   const HASH = "#" + CONFIG.hash;
   const log = (...a) => CONFIG.debug && console.log("[YT Podcasts]", ...a);
 
@@ -2495,7 +2495,8 @@
   const GUIDE_SECTION_LINKS = {
     subscriptions: ['#header-entry a[href^="/feed/channels"]', '#header-entry a[href^="/feed/subscriptions"]', "#header-entry a[title=\"Subscriptions\"]"],
     explore: ['a[href^="/feed/trending"]', 'a[href^="/gaming"]', 'a[href^="/feed/storefront"]', 'a[href^="/feed/explore"]', "#header-entry a[title=\"Explore\"]"],
-    "more from youtube": ['a[href*="studio.youtube.com"]', 'a[href*="music.youtube.com"]', 'a[href*="youtubekids.com"]', 'a[href^="/premium"]'],
+    // Not studio.youtube.com: "Your videos" in the You section links there too.
+    "more from youtube": ['a[href*="music.youtube.com"]', 'a[href*="youtubekids.com"]', 'a[href^="/labs"]'],
   };
   function guideCss() {
     const sels = (CONFIG.hideGuideSections || []).flatMap((t) => GUIDE_SECTION_LINKS[t.toLowerCase()] || []);

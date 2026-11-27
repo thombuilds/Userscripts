@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Reddit Tweaks (Narwhal-style old.reddit)
 // @description  Restyles old.reddit.com into a clean, minimal, app-like layout.
-// @version      1.5.3
+// @version      1.5.4
 // @updateURL    https://raw.githubusercontent.com/thombuilds/Userscripts/main/reddit.user.js
 // @downloadURL  https://raw.githubusercontent.com/thombuilds/Userscripts/main/reddit.user.js
 // @match        https://old.reddit.com/*
@@ -1274,7 +1274,10 @@
     html.nw-split .nw-user-name,
     html.nw-split .nw-user-chip::after { display: none; }
     html.nw-split .nw-user-chip { padding: 0 2px !important; height: 28px; }
-    html.nw-split #header .tabmenu li a { padding: 4px 9px !important; }
+    html.nw-split #header .tabmenu li a { padding: 4px 7px !important; }
+    /* When the tabs overflow and scroll, the pill's end padding is lost,
+       so the last tab would sit flush against the edge. */
+    html.nw-split #header .tabmenu li:last-child { margin-right: 3px !important; }
 
     .nw-pane {
       position: fixed;
